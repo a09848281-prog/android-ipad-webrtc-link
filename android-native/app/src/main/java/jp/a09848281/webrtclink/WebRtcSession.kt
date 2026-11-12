@@ -232,21 +232,24 @@ class WebRtcSession(
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return
-        try { network.shutdownNow() } catch (_: Throwable) {}
-        try { sender.shutdownNow() } catch (_: Throwable) {}
-        try { capturer?.stopCapture() } catch (_: Throwable) {}
-        try { capturer?.dispose() } catch (_: Throwable) {}
-        capturer = null
-        try { localVideoTrack?.dispose() } catch (_: Throwable) {}
-        try { localAudioTrack?.dispose() } catch (_: Throwable) {}
-        try { videoSource?.dispose() } catch (_: Throwable) {}
-        try { audioSource?.dispose() } catch (_: Throwable) {}
-        try { peer?.close(); peer?.dispose() } catch (_: Throwable) {}
-        try { textureHelper?.dispose() } catch (_: Throwable) {}
-        try { factory?.dispose() } catch (_: Throwable) {}
-        try { eglBase?.release() } catch (_: Throwable) {}
-        localVideoTrack = null; localAudioTrack = null; videoSource = null; audioSource = null
-        peer = null; textureHelper = null; factory = null; eglBase = null
+        // Camera shutdown can block; never perform native teardown on the Android main thread.
+        Thread({
+            try { network.shutdownNow() } catch (_: Throwable) {}
+            try { sender.shutdownNow() } catch (_: Throwable) {}
+            try { capturer?.stopCapture() } catch (_: Throwable) {}
+            try { capturer?.dispose() } catch (_: Throwable) {}
+            capturer = null
+            try { localVideoTrack?.dispose() } catch (_: Throwable) {}
+            try { localAudioTrack?.dispose() } catch (_: Throwable) {}
+            try { videoSource?.dispose() } catch (_: Throwable) {}
+            try { audioSource?.dispose() } catch (_: Throwable) {}
+            try { peer?.close(); peer?.dispose() } catch (_: Throwable) {}
+            try { textureHelper?.dispose() } catch (_: Throwable) {}
+            try { factory?.dispose() } catch (_: Throwable) {}
+            try { eglBase?.release() } catch (_: Throwable) {}
+            localVideoTrack = null; localAudioTrack = null; videoSource = null; audioSource = null
+            peer = null; textureHelper = null; factory = null; eglBase = null
+        }, "WebRTC-Shutdown").start()
     }
 
     companion object { private const val TAG = "WebRtcSession" }
