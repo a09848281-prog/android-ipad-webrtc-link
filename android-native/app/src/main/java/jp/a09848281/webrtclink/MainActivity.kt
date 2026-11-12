@@ -24,14 +24,14 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
             val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            if (cameraGranted && microphoneGranted) startMediaService()
+            if (cameraGranted && microphoneGranted) startWebRtcService()
             else status.text = "カメラとマイクの許可が必要です。設定から許可してください。"
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply {
-            text = "GAS URLを入力して、開始してください。"
+            text = "最初にサービス単体テストを行ってください。"
             textSize = 16f
             setPadding(8, 16, 8, 16)
         }
@@ -45,8 +45,12 @@ class MainActivity : ComponentActivity() {
             textSize = 22f
             setPadding(8, 18, 8, 18)
         }
-        val start = Button(this).apply {
-            text = "WebRTC通信を開始"
+        val serviceTest = Button(this).apply {
+            text = "① サービスだけ起動（安全テスト）"
+            setOnClickListener { startServiceOnly() }
+        }
+        val rtcStart = Button(this).apply {
+            text = "② WebRTCを開始（次の段階）"
             setOnClickListener { requestMediaPermissions() }
         }
         val stop = Button(this).apply {
@@ -61,21 +65,34 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 32, 20, 20)
             addView(TextView(this@MainActivity).apply {
-                text = "Android WebRTC Link"
+                text = "Android WebRTC Link - 診断モード"
                 textSize = 22f
                 setPadding(8, 8, 8, 12)
             })
-            addView(TextView(this@MainActivity).apply { text = "① GAS WebアプリURL" })
+            addView(TextView(this@MainActivity).apply { text = "GAS WebアプリURL（WebRTCテスト時に使用）" })
             addView(gasUrlInput)
             addView(TextView(this@MainActivity).apply {
-                text = "② 開始後、この6桁コードをiPad側に入力"
+                text = "接続コードは②を押した後に表示されます。"
                 setPadding(8, 18, 8, 0)
             })
             addView(roomCodeView)
-            addView(start)
+            addView(serviceTest)
+            addView(rtcStart)
             addView(stop)
             addView(status)
         })
+    }
+
+    private fun startServiceOnly() {
+        try {
+            val intent = Intent(this, WebRtcForegroundService::class.java)
+                .setAction(WebRtcForegroundService.ACTION_DIAGNOSTIC_ONLY)
+            ContextCompat.startForegroundService(this, intent)
+            status.text = "サービス単体テストを開始しました。通知が残るか確認してください。WebRTC・カメラ・マイクは起動していません。"
+            roomCodeView.text = "接続コード：テスト前"
+        } catch (error: Exception) {
+            status.text = "サービス起動失敗: ${error.javaClass.simpleName}: ${error.message}"
+        }
     }
 
     private fun requestMediaPermissions() {
@@ -87,11 +104,11 @@ class MainActivity : ComponentActivity() {
         val missing = permissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-        if (missing.isEmpty()) startMediaService()
+        if (missing.isEmpty()) startWebRtcService()
         else permissionLauncher.launch(missing.toTypedArray())
     }
 
-    private fun startMediaService() {
+    private fun startWebRtcService() {
         val gasUrl = gasUrlInput.text.toString().trim().trimEnd('/')
         val valid = gasUrl.startsWith("https://script.google.com/macros/s/") &&
             gasUrl.endsWith("/exec") && !gasUrl.contains("?")
@@ -102,15 +119,15 @@ class MainActivity : ComponentActivity() {
         val room = (100000..999999).random().toString()
         getPreferences(MODE_PRIVATE).edit().putString("gas_url", gasUrl).apply()
         val intent = Intent(this, WebRtcForegroundService::class.java)
-            .setAction(WebRtcForegroundService.ACTION_START)
+            .setAction(WebRtcForegroundService.ACTION_START_WEBRTC)
             .putExtra(WebRtcForegroundService.EXTRA_GAS_URL, gasUrl)
             .putExtra(WebRtcForegroundService.EXTRA_ROOM, room)
         try {
             ContextCompat.startForegroundService(this, intent)
             roomCodeView.text = "接続コード：$room"
-            status.text = "サービスを開始しました。通知欄で状態を確認できます。"
+            status.text = "WebRTCの診断起動を要求しました。クラッシュした場合は最後に表示された状態を教えてください。"
         } catch (error: Exception) {
-            status.text = "サービスを開始できませんでした: ${error.javaClass.simpleName}"
+            status.text = "WebRTCサービス起動失敗: ${error.javaClass.simpleName}: ${error.message}"
         }
     }
 }
