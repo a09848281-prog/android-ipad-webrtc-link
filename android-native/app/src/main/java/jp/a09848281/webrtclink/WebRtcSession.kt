@@ -25,6 +25,7 @@ class WebRtcSession(
     private val closed = AtomicBoolean(false)
     private val network = Executors.newSingleThreadScheduledExecutor()
     private var factory: PeerConnectionFactory? = null
+    private var eglBase: EglBase? = null
     private var peer: PeerConnection? = null
     private var capturer: CameraVideoCapturer? = null
     private var textureHelper: SurfaceTextureHelper? = null
@@ -58,8 +59,9 @@ class WebRtcSession(
                 .setEnableInternalTracer(false)
                 .createInitializationOptions()
         )
-        val encoder = DefaultVideoEncoderFactory(EglBase.create().eglBaseContext, true, true)
-        val decoder = DefaultVideoDecoderFactory(EglBase.create().eglBaseContext)
+        eglBase = EglBase.create()
+        val encoder = DefaultVideoEncoderFactory(eglBase!!.eglBaseContext, true, true)
+        val decoder = DefaultVideoDecoderFactory(eglBase!!.eglBaseContext)
         factory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(encoder)
             .setVideoDecoderFactory(decoder)
@@ -78,8 +80,7 @@ class WebRtcSession(
             ?: enumerator.deviceNames.firstOrNull()
             ?: error("利用できるカメラがありません")
         capturer = enumerator.createCapturer(cameraName, null) ?: error("カメラを開けません")
-        val egl = EglBase.create()
-        textureHelper = SurfaceTextureHelper.create("WebRTC-Capture", egl.eglBaseContext)
+        textureHelper = SurfaceTextureHelper.create("WebRTC-Capture", eglBase!!.eglBaseContext)
         videoSource = factory!!.createVideoSource(false)
         capturer!!.initialize(textureHelper, context.applicationContext, videoSource!!.capturerObserver)
         capturer!!.startCapture(1280, 720, 24)
@@ -152,13 +153,15 @@ class WebRtcSession(
                 }
                 try {
                     val body = connection.inputStream.bufferedReader().use { it.readText() }
-                    val messages = JSONObject(body).optJSONArray("messages") ?: return@try
-                    for (i in 0 until messages.length()) {
-                        val message = messages.optJSONObject(i) ?: continue
-                        val id = message.optString("id")
-                        if (id.isNotBlank() && seen.add(id)) handleMessage(message)
+                    val messages = JSONObject(body).optJSONArray("messages")
+                    if (messages != null) {
+                        for (i in 0 until messages.length()) {
+                            val message = messages.optJSONObject(i) ?: continue
+                            val id = message.optString("id")
+                            if (id.isNotBlank() && seen.add(id)) handleMessage(message)
+                        }
+                        if (seen.size > 500) seen.clear()
                     }
-                    if (seen.size > 500) seen.clear()
                 } finally { connection.disconnect() }
             } catch (t: Throwable) {
                 Log.w(TAG, "GAS poll failed", t)
@@ -239,8 +242,9 @@ class WebRtcSession(
         try { peer?.close(); peer?.dispose() } catch (_: Throwable) {}
         try { textureHelper?.dispose() } catch (_: Throwable) {}
         try { factory?.dispose() } catch (_: Throwable) {}
+        try { eglBase?.release() } catch (_: Throwable) {}
         localVideoTrack = null; localAudioTrack = null; videoSource = null; audioSource = null
-        peer = null; textureHelper = null; factory = null
+        peer = null; textureHelper = null; factory = null; eglBase = null
     }
 
     companion object { private const val TAG = "WebRtcSession" }
