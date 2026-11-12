@@ -142,5 +142,8 @@
   els.disconnect.addEventListener("click",stop);
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(err => console.warn("PWA worker registration failed", err)));
+  }
   window.addEventListener("beforeunload",()=>{stopPolling();if(localStream)localStream.getTracks().forEach(t=>t.stop());});
 })();
