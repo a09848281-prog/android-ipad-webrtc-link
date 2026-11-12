@@ -46,3 +46,15 @@ The current implementation uses public Google STUN servers only. Some networks r
 ## Background limitations
 
 A foreground service and persistent notification are required for long-running media capture. Android may still restrict camera/microphone access depending on OS version, permission state, OEM policy, battery settings, and how the service was started. This project does not promise capture after force-stop, reboot, permission revocation, or app termination by the system.
+
+
+## Crash-isolation test (new)
+
+The app now has two separate start buttons so the first test does not initialize WebRTC:
+
+1. Tap **① サービスだけ起動（安全テスト）**. This starts a foreground service with a persistent notification only. It does not initialize WebRTC, open the camera, or open the microphone.
+2. Confirm that the notification remains visible for at least 30 seconds and after returning to the home screen.
+3. Tap **サービスを停止**.
+4. Only after the service-only test is stable, enter the GAS URL, grant camera/microphone permissions, and tap **② WebRTCを開始（次の段階）**. This starts the current WebRTC alpha and may still expose the existing initialization issue.
+
+Do not treat a successful service-only test as proof that WebRTC or background camera/microphone capture works. This is a diagnostic split, not a production-ready release. Test builds are not yet verified on the Galaxy A22 5G.
