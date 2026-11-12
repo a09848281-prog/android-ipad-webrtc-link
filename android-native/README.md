@@ -1,38 +1,46 @@
 # Android Native Track (separate from the working PWA)
 
-This directory is an isolated Android Studio project. The existing GitHub Pages PWA and GAS files remain on the original `main` branch and are not replaced.
+This directory is an isolated Android Studio project. The existing GitHub Pages PWA and GAS files on `main` are preserved and are not replaced.
 
-## Current status: alpha foundation only
+## Current status: WebRTC alpha (not yet device-verified)
 
-Implemented in this commit:
-- Separate Android application module and pinned Gradle/plugin/dependency versions.
+Implemented in this branch:
+- Separate Android application module with pinned Gradle/plugin/WebRTC SDK versions.
 - Runtime permission request for camera, microphone, and Android 13 notifications.
-- Explicit user-initiated foreground-service startup.
-- Persistent service notification with a Stop action.
-- Bounded partial wake lock (30 minutes) and cleanup.
-- Service uses `START_NOT_STICKY` to avoid restoring an invalid half-connected session.
+- Explicit user-initiated camera/microphone foreground-service startup.
+- Persistent notification with a Stop action and bounded 30-minute partial wake lock.
+- WebRTC factory, camera capturer, microphone audio track, PeerConnection, SDP offer/answer, and ICE candidate handling.
+- GAS signaling compatible with the existing PWA protocol (`offer`, `answer`, `candidate`; 6-digit room code).
+- Separate polling and send executors; idempotent cleanup for capture, peer, EGL, and factory resources.
 
-Not implemented yet:
-- WebRTC camera/microphone capture and peer negotiation.
-- GAS signaling integration.
-- Automatic reconnect, saved device pairing, quality controls, volume, connection statistics, camera switch, and microphone mute.
-- Verified lock-screen media continuity.
+Not yet verified:
+- Successful Gradle build of this WebRTC commit.
+- Actual Galaxy A22 5G / Android 13 camera and microphone capture.
+- Android-to-iPad P2P video/audio and lock-screen media continuity.
+- Network behavior through all GAS redirects and restrictive Wi-Fi/mobile networks.
+- TURN relay support, automatic reconnect, saved device pairing, quality controls, volume, connection statistics, camera switching, and mute UI.
 
-Do not treat this alpha as a usable replacement for the PWA. The service currently proves only the Android service/permission/notification lifecycle.
+## How to test after a successful CI build
 
-## Build
+1. Install the debug APK on the Galaxy A22 5G.
+2. Open the app and paste the deployed GAS Web App URL ending in `/exec`.
+3. Tap **WebRTC通信を開始** and grant camera/microphone permissions.
+4. Keep the app open until the 6-digit room code appears.
+5. Open the existing iPad PWA, set the GAS URL, choose iPad mode, enter the code, and join.
+6. Confirm video and push-to-talk audio in both directions.
+7. Only after foreground testing succeeds, lock the Android screen and repeat the media test.
 
-Open this directory in Android Studio (JDK 17, Android SDK 35), sync Gradle, then run the `app` debug configuration. GitHub Actions also runs a debug build on pushes to this branch.
+The current implementation uses public Google STUN servers only. Some networks require a TURN relay, so a failed P2P connection does not necessarily indicate an application bug.
 
 ## Crash-prevention rules
 
 1. Do not initialize WebRTC before permissions are granted.
-2. Start foreground service only from a visible Activity after an explicit user action.
+2. Start the camera/microphone foreground service only from a visible Activity after an explicit user action.
 3. Call `startForeground` immediately in service startup.
 4. Do not use `START_STICKY` for an incomplete media session.
-5. Release wake locks, camera capturers, audio devices, peer connections, and EGL resources in a single idempotent shutdown path.
-6. Keep media operations off the main thread and serialize peer-connection state transitions.
-7. Every asynchronous callback must check that its session is still current before touching UI or native resources.
+5. Release camera capturers, audio tracks, peer connections, EGL resources, executors, and wake locks through one idempotent shutdown path.
+6. Keep network polling and signaling sends off the main thread.
+7. Treat asynchronous callbacks as potentially stale after shutdown.
 8. Test on the actual Galaxy A22 5G / Android 13 before producing a release APK.
 
 ## Background limitations
