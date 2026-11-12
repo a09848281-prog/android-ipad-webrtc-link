@@ -39,28 +39,44 @@ class WebRtcSession(
     @Volatile private var remoteDescriptionReady = false
     @Volatile private var pollRunning = false
 
+    @Volatile private var currentStage = "RTC-00: 起動待ち"
+
+    private fun stage(message: String) {
+        currentStage = message
+        Log.i(TAG, message)
+        report(message)
+    }
+
     fun start() {
         network.execute {
             try {
+                stage("RTC-01: WebRTC SDK初期化")
                 initializePeer()
+                stage("RTC-11: GAS受信待ちを開始")
                 startPolling()
+                stage("RTC-12: Offer作成")
                 createOffer()
             } catch (t: Throwable) {
-                report("WebRTC初期化エラー: ${t.message ?: t.javaClass.simpleName}")
-                Log.e(TAG, "start failed", t)
+                val detail = "${currentStage} / ${t.javaClass.simpleName}: ${t.message ?: "詳細なし"}"
+                report("RTC失敗: $detail")
+                Log.e(TAG, "WebRTC failed at $currentStage", t)
                 close()
             }
         }
     }
 
     private fun initializePeer() {
-        report("WebRTCエンジンを初期化中…")
+        stage("RTC-01: WebRTC SDK初期化")
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
                 .setEnableInternalTracer(false)
                 .createInitializationOptions()
         )
+
+        stage("RTC-02: EGL初期化")
         eglBase = EglBase.create()
+
+        stage("RTC-03: Encoder/Decoder初期化")
         val encoder = DefaultVideoEncoderFactory(eglBase!!.eglBaseContext, true, true)
         val decoder = DefaultVideoDecoderFactory(eglBase!!.eglBaseContext)
         factory = PeerConnectionFactory.builder()
@@ -68,6 +84,7 @@ class WebRtcSession(
             .setVideoDecoderFactory(decoder)
             .createPeerConnectionFactory()
 
+        stage("RTC-04: PeerConnection作成")
         val iceServers = listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
@@ -75,22 +92,37 @@ class WebRtcSession(
         peer = factory?.createPeerConnection(PeerConnection.RTCConfiguration(iceServers), observer())
             ?: error("PeerConnectionを作成できませんでした")
 
+        stage("RTC-05: カメラ一覧取得")
         val enumerator: CameraEnumerator =
             if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
         val cameraName = enumerator.deviceNames.firstOrNull { enumerator.isBackFacing(it) }
             ?: enumerator.deviceNames.firstOrNull()
             ?: error("利用できるカメラがありません")
+
+        stage("RTC-06: カメラCapturer作成")
         capturer = enumerator.createCapturer(cameraName, null) ?: error("カメラを開けません")
+
+        stage("RTC-07: 映像ソース作成")
         textureHelper = SurfaceTextureHelper.create("WebRTC-Capture", eglBase!!.eglBaseContext)
         videoSource = factory!!.createVideoSource(false)
+
+        stage("RTC-08: カメラ初期化")
         capturer!!.initialize(textureHelper!!, context.applicationContext, videoSource!!.capturerObserver)
+
+        stage("RTC-09: カメラ撮影開始")
         capturer!!.startCapture(1280, 720, 24)
+
+        stage("RTC-10: 映像トラック作成")
         localVideoTrack = factory!!.createVideoTrack("android_video", videoSource)
+
+        stage("RTC-10A: 音声ソース作成")
         audioSource = factory!!.createAudioSource(MediaConstraints())
         localAudioTrack = factory!!.createAudioTrack("android_audio", audioSource)
+
+        stage("RTC-10B: トラック登録")
         peer!!.addTrack(localVideoTrack!!, listOf("webrtc-link"))
         peer!!.addTrack(localAudioTrack!!, listOf("webrtc-link"))
-        report("カメラ・マイクを準備しました。iPadからの接続を待っています…")
+        stage("RTC-10C: カメラ・マイク準備完了")
     }
 
     private fun observer() = object : PeerConnection.Observer {
