@@ -15,8 +15,17 @@
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
-  function gas(){ return els.gasUrl.value.trim(); }
-  function validGas(){ try { const u=new URL(gas()); return u.protocol==="https:" && /script\.google\.com$/.test(u.hostname) && /\/exec$/.test(u.pathname); } catch(_){return false;} }
+  function gas(){ return els.gasUrl.value.trim().replace(/^["'\s]+|["'\s]+$/g, "").replace(/[\u200B-\u200D\uFEFF]/g, ""); }
+  function normalizeGasUrl(){
+    try {
+      const u = new URL(gas());
+      const allowedHost = u.hostname === "script.google.com" || u.hostname === "script.googleusercontent.com";
+      if (u.protocol !== "https:" || !allowedHost || !/\/exec\/?$/.test(u.pathname)) return "";
+      u.hash = "";
+      return u.toString().replace(/\/$/, "");
+    } catch (_) { return ""; }
+  }
+  function validGas(){ return !!normalizeGasUrl(); }
   function setRole(next){
     if(started){ log("端末の切り替えは切断後に行ってください。"); return; }
     role=next; els.hostPanel.classList.toggle("hidden",role!=="android"); els.viewerPanel.classList.toggle("hidden",role!=="ipad");
