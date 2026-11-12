@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat
  */
 class WebRtcForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
+    private var webRtcSession: WebRtcSession? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -46,6 +47,17 @@ class WebRtcForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        val gasUrl = intent?.getStringExtra(EXTRA_GAS_URL).orEmpty()
+        val room = intent?.getStringExtra(EXTRA_ROOM).orEmpty()
+        if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
+            !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}"))) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        webRtcSession?.close()
+        webRtcSession = WebRtcSession(applicationContext, gasUrl, room) { message ->
+            updateNotification(message)
+        }.also { it.start() }
         // START_NOT_STICKY avoids silently resurrecting a half-initialized media session.
         return START_NOT_STICKY
     }
@@ -57,7 +69,12 @@ class WebRtcForegroundService : Service() {
             .apply { setReferenceCounted(false); acquire(30 * 60 * 1000L) }
     }
 
-    private fun buildNotification(): Notification {
+    private fun updateNotification(message: String) {
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, buildNotification(message.take(100)))
+    }
+
+    private fun buildNotification(status: String = "通信サービスを起動中") : Notification {
         val stopIntent = Intent(this, WebRtcForegroundService::class.java).setAction(ACTION_STOP)
         val pending = PendingIntent.getService(
             this, 1, stopIntent,
@@ -66,7 +83,7 @@ class WebRtcForegroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.presence_video_online)
             .setContentTitle("WebRTC Link")
-            .setContentText("通信サービスを起動中（メディア接続機能は開発中）")
+            .setContentText(status)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(android.R.drawable.ic_media_pause, "停止", pending)
@@ -84,6 +101,8 @@ class WebRtcForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        webRtcSession?.close()
+        webRtcSession = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
@@ -94,6 +113,8 @@ class WebRtcForegroundService : Service() {
     companion object {
         const val ACTION_START = "jp.a09848281.webrtclink.START"
         const val ACTION_STOP = "jp.a09848281.webrtclink.STOP"
+        const val EXTRA_GAS_URL = "gas_url"
+        const val EXTRA_ROOM = "room_code"
         private const val CHANNEL_ID = "webrtc_session"
         private const val NOTIFICATION_ID = 4102
     }
