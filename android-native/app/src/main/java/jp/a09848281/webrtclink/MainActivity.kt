@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -14,24 +15,38 @@ import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
+    private lateinit var gasUrlInput: EditText
+    private lateinit var roomCodeView: TextView
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-            val mediaGranted = result[Manifest.permission.CAMERA] == true &&
-                result[Manifest.permission.RECORD_AUDIO] == true
-            if (mediaGranted) startMediaService()
+            val cameraGranted = result[Manifest.permission.CAMERA] == true ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (cameraGranted && microphoneGranted) startMediaService()
             else status.text = "カメラとマイクの許可が必要です。設定から許可してください。"
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply {
-            text = "準備完了。まずは画面を開いた状態で開始してください。"
+            text = "GAS URLを入力して、開始してください。"
             textSize = 16f
-            setPadding(24, 24, 24, 24)
+            setPadding(8, 16, 8, 16)
+        }
+        gasUrlInput = EditText(this).apply {
+            hint = "GAS WebアプリURL（https://script.google.com/macros/s/.../exec）"
+            setSingleLine(true)
+            setText(getPreferences(MODE_PRIVATE).getString("gas_url", ""))
+        }
+        roomCodeView = TextView(this).apply {
+            text = "接続コード：------"
+            textSize = 22f
+            setPadding(8, 18, 8, 18)
         }
         val start = Button(this).apply {
-            text = "バックグラウンド通信サービスを開始"
+            text = "WebRTC通信を開始"
             setOnClickListener { requestMediaPermissions() }
         }
         val stop = Button(this).apply {
@@ -39,14 +54,27 @@ class MainActivity : ComponentActivity() {
             setOnClickListener {
                 stopService(Intent(this@MainActivity, WebRtcForegroundService::class.java))
                 status.text = "サービスを停止しました。"
+                roomCodeView.text = "接続コード：------"
             }
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 40, 20, 20)
-            addView(status)
+            setPadding(20, 32, 20, 20)
+            addView(TextView(this@MainActivity).apply {
+                text = "Android WebRTC Link"
+                textSize = 22f
+                setPadding(8, 8, 8, 12)
+            })
+            addView(TextView(this@MainActivity).apply { text = "① GAS WebアプリURL" })
+            addView(gasUrlInput)
+            addView(TextView(this@MainActivity).apply {
+                text = "② 開始後、この6桁コードをiPad側に入力"
+                setPadding(8, 18, 8, 0)
+            })
+            addView(roomCodeView)
             addView(start)
             addView(stop)
+            addView(status)
         })
     }
 
@@ -64,11 +92,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startMediaService() {
+        val gasUrl = gasUrlInput.text.toString().trim().trimEnd('/')
+        val valid = gasUrl.startsWith("https://script.google.com/macros/s/") &&
+            gasUrl.endsWith("/exec") && !gasUrl.contains("?")
+        if (!valid) {
+            status.text = "GAS WebアプリURLを確認してください。末尾が /exec のURLを入力します。"
+            return
+        }
+        val room = (100000..999999).random().toString()
+        getPreferences(MODE_PRIVATE).edit().putString("gas_url", gasUrl).apply()
         val intent = Intent(this, WebRtcForegroundService::class.java)
             .setAction(WebRtcForegroundService.ACTION_START)
+            .putExtra(WebRtcForegroundService.EXTRA_GAS_URL, gasUrl)
+            .putExtra(WebRtcForegroundService.EXTRA_ROOM, room)
         try {
             ContextCompat.startForegroundService(this, intent)
-            status.text = "前景サービスを開始しました。通知欄を確認してください。"
+            roomCodeView.text = "接続コード：$room"
+            status.text = "サービスを開始しました。通知欄で状態を確認できます。"
         } catch (error: Exception) {
             status.text = "サービスを開始できませんでした: ${error.javaClass.simpleName}"
         }
