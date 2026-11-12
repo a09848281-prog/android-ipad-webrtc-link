@@ -24,14 +24,18 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
             val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            if (cameraGranted && microphoneGranted) startWebRtcService()
-            else status.text = "カメラとマイクの許可が必要です。設定から許可してください。"
+            val bluetoothGranted = Build.VERSION.SDK_INT < 31 ||
+                result[Manifest.permission.BLUETOOTH_CONNECT] == true ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+            if (cameraGranted && microphoneGranted && bluetoothGranted) startWebRtcService()
+            else status.text = "カメラ・マイク・Bluetooth接続の必要な許可がありません。設定から確認してください。"
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply {
-            text = "最初にサービス単体テストを行ってください。"
+            text = "WebRTC診断モード。サービス単体テスト済みの場合は②から進めてください。"
             textSize = 16f
             setPadding(8, 16, 8, 16)
         }
@@ -50,7 +54,7 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { startServiceOnly() }
         }
         val rtcStart = Button(this).apply {
-            text = "② WebRTCを開始（次の段階）"
+            text = "② WebRTCを開始（診断）"
             setOnClickListener { requestMediaPermissions() }
         }
         val stop = Button(this).apply {
@@ -99,6 +103,7 @@ class MainActivity : ComponentActivity() {
         val permissions = buildList {
             add(Manifest.permission.CAMERA)
             add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }
         val missing = permissions.filter {
@@ -125,7 +130,7 @@ class MainActivity : ComponentActivity() {
         try {
             ContextCompat.startForegroundService(this, intent)
             roomCodeView.text = "接続コード：$room"
-            status.text = "WebRTCの診断起動を要求しました。クラッシュした場合は最後に表示された状態を教えてください。"
+            status.text = "RTC診断を開始しました。番号表示は初期化成功を意味しません。通知の最後のRTC段階を確認してください。"
         } catch (error: Exception) {
             status.text = "WebRTCサービス起動失敗: ${error.javaClass.simpleName}: ${error.message}"
         }
