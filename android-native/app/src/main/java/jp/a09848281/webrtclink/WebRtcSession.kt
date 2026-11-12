@@ -15,6 +15,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Android host-side WebRTC session.
  * Signaling wire format intentionally matches the existing GAS/PWA protocol.
+ *
+ * Compatibility-first profile for Galaxy A22 / Android 13:
+ * software codecs and conservative capture settings are used during initial validation.
  */
 class WebRtcSession(
     private val context: Context,
@@ -38,7 +41,6 @@ class WebRtcSession(
     private val pendingCandidates = ArrayList<IceCandidate>()
     @Volatile private var remoteDescriptionReady = false
     @Volatile private var pollRunning = false
-
     @Volatile private var currentStage = "RTC-00: 起動待ち"
 
     private fun stage(message: String) {
@@ -76,13 +78,15 @@ class WebRtcSession(
         stage("RTC-02: EGL初期化")
         eglBase = EglBase.create()
 
-        stage("RTC-03: Encoder/Decoder初期化")
-        val encoder = DefaultVideoEncoderFactory(eglBase!!.eglBaseContext, true, true)
-        val decoder = DefaultVideoDecoderFactory(eglBase!!.eglBaseContext)
+        stage("RTC-03: ソフトウェアCodecでFactory初期化")
+        // Avoid device-specific MediaCodec encoder/decoder paths during stability testing.
+        val encoder = SoftwareVideoEncoderFactory()
+        val decoder = SoftwareVideoDecoderFactory()
         factory = PeerConnectionFactory.builder()
             .setVideoEncoderFactory(encoder)
             .setVideoDecoderFactory(decoder)
             .createPeerConnectionFactory()
+        if (factory == null) error("PeerConnectionFactoryを作成できませんでした")
 
         stage("RTC-04: PeerConnection作成")
         val iceServers = listOf(
@@ -95,22 +99,23 @@ class WebRtcSession(
         stage("RTC-05: カメラ一覧取得")
         val enumerator: CameraEnumerator =
             if (Camera2Enumerator.isSupported(context)) Camera2Enumerator(context) else Camera1Enumerator(false)
-        val cameraName = enumerator.deviceNames.firstOrNull { enumerator.isBackFacing(it) }
-            ?: enumerator.deviceNames.firstOrNull()
-            ?: error("利用できるカメラがありません")
+        val names = enumerator.deviceNames
+        if (names.isEmpty()) error("カメラが検出されませんでした")
+        val cameraName = names.firstOrNull { enumerator.isBackFacing(it) } ?: names.first()
 
         stage("RTC-06: カメラCapturer作成")
-        capturer = enumerator.createCapturer(cameraName, null) ?: error("カメラを開けません")
+        capturer = enumerator.createCapturer(cameraName, null) ?: error("カメラCapturerを作成できません")
 
         stage("RTC-07: 映像ソース作成")
         textureHelper = SurfaceTextureHelper.create("WebRTC-Capture", eglBase!!.eglBaseContext)
+            ?: error("SurfaceTextureHelperを作成できません")
         videoSource = factory!!.createVideoSource(false)
 
         stage("RTC-08: カメラ初期化")
         capturer!!.initialize(textureHelper!!, context.applicationContext, videoSource!!.capturerObserver)
 
-        stage("RTC-09: カメラ撮影開始")
-        capturer!!.startCapture(1280, 720, 24)
+        stage("RTC-09: 低負荷カメラ撮影開始 640x480 / 15fps")
+        capturer!!.startCapture(640, 480, 15)
 
         stage("RTC-10: 映像トラック作成")
         localVideoTrack = factory!!.createVideoTrack("android_video", videoSource)
@@ -139,10 +144,8 @@ class WebRtcSession(
         override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
         override fun onIceCandidate(candidate: IceCandidate) {
-            val payload = JSONObject()
-                .put("candidate", candidate.sdp)
-                .put("sdpMid", candidate.sdpMid)
-                .put("sdpMLineIndex", candidate.sdpMLineIndex)
+            val payload = JSONObject().put("candidate", candidate.sdp)
+                .put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex)
             sendSignal("candidate", payload)
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) {}
@@ -225,11 +228,8 @@ class WebRtcSession(
             }
             "candidate" -> {
                 val payload = message.optJSONObject("payload") ?: return
-                val candidate = IceCandidate(
-                    payload.optString("sdpMid", "0"),
-                    payload.optInt("sdpMLineIndex"),
-                    payload.optString("candidate")
-                )
+                val candidate = IceCandidate(payload.optString("sdpMid", "0"),
+                    payload.optInt("sdpMLineIndex"), payload.optString("candidate"))
                 if (remoteDescriptionReady) peer?.addIceCandidate(candidate)
                 else synchronized(pendingCandidates) { pendingCandidates.add(candidate) }
             }
@@ -241,8 +241,7 @@ class WebRtcSession(
             if (closed.get()) return@execute
             var connection: HttpURLConnection? = null
             try {
-                val message = JSONObject()
-                    .put("room", room).put("from", "android").put("to", "ipad")
+                val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
                     .put("type", type).put("payload", payload)
                     .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
                 connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
@@ -264,7 +263,6 @@ class WebRtcSession(
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return
-        // Camera shutdown can block; never perform native teardown on the Android main thread.
         Thread({
             try { network.shutdownNow() } catch (_: Throwable) {}
             try { sender.shutdownNow() } catch (_: Throwable) {}
