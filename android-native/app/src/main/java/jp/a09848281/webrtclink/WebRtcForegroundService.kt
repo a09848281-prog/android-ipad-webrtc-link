@@ -13,8 +13,8 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
 /**
- * Lifecycle shell only. WebRTC capture/peer logic is deliberately not started here yet.
- * The foreground service is started only after an explicit user action while the Activity is visible.
+ * Owns the foreground lifetime of the WebRTC media session.
+ * Started only after an explicit user action while the Activity is visible.
  */
 class WebRtcForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
