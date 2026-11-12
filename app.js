@@ -131,8 +131,11 @@
   function pttUp(){if(pttTrack){pttTrack.enabled=false;els.ptt.classList.remove("active");els.ptt.textContent="🎙️ 押している間だけ話す";}}
 
   els.saveGas.addEventListener("click",()=>{
-    if(!validGas()){els.gasStatus.textContent="URLを確認してください";log("GASのURLは https://script.google.com/.../exec の形式にしてください。");return;}
-    localStorage.setItem("webrtcGasUrl",gas());els.gasStatus.textContent="保存済み ✓";log("GAS URLをこの端末に保存しました。");
+    if(!validGas()){els.gasStatus.textContent="URLを確認してください";log("GASの「ウェブアプリ URL」を使ってください。例：https://script.google.com/macros/s/.../exec（末尾は /exec）。URLの前後の空白や引用符は自動で除去します。");return;}
+    const normalized = normalizeGasUrl();
+    if (!normalized) { els.gasStatus.textContent="URLを確認してください"; log("GASの「ウェブアプリ URL」をコピーしてください。末尾が /exec のURLが必要です。"); return; }
+    els.gasUrl.value = normalized;
+    localStorage.setItem("webrtcGasUrl",normalized);els.gasStatus.textContent="保存済み ✓";log("GAS URLをこの端末に保存しました。");
   });
   els.gasUrl.value=localStorage.getItem("webrtcGasUrl")||"";if(els.gasUrl.value)els.gasStatus.textContent="保存済み";
   els.hostMode.addEventListener("click",()=>setRole("android"));els.viewerMode.addEventListener("click",()=>setRole("ipad"));
