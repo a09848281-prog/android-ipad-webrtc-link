@@ -1,0 +1,11 @@
+{
+  "name": "Android iPad WebRTC Link",
+  "short_name": "WebRTC Link",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#101827",
+  "description": "AndroidとiPadをWebRTCで直接つなぐ個人用通信ツール"
+}
