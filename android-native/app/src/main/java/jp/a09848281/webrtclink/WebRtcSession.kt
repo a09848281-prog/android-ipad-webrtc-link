@@ -82,13 +82,13 @@ class WebRtcSession(
         capturer = enumerator.createCapturer(cameraName, null) ?: error("カメラを開けません")
         textureHelper = SurfaceTextureHelper.create("WebRTC-Capture", eglBase!!.eglBaseContext)
         videoSource = factory!!.createVideoSource(false)
-        capturer!!.initialize(textureHelper, context.applicationContext, videoSource!!.capturerObserver)
+        capturer!!.initialize(textureHelper!!, context.applicationContext, videoSource!!.capturerObserver)
         capturer!!.startCapture(1280, 720, 24)
         localVideoTrack = factory!!.createVideoTrack("android_video", videoSource)
         audioSource = factory!!.createAudioSource(MediaConstraints())
         localAudioTrack = factory!!.createAudioTrack("android_audio", audioSource)
-        peer!!.addTrack(localVideoTrack, listOf("webrtc-link"))
-        peer!!.addTrack(localAudioTrack, listOf("webrtc-link"))
+        peer!!.addTrack(localVideoTrack!!, listOf("webrtc-link"))
+        peer!!.addTrack(localAudioTrack!!, listOf("webrtc-link"))
         report("カメラ・マイクを準備しました。iPadからの接続を待っています…")
     }
 
@@ -193,7 +193,7 @@ class WebRtcSession(
             "candidate" -> {
                 val payload = message.optJSONObject("payload") ?: return
                 val candidate = IceCandidate(
-                    payload.optString("sdpMid").ifBlank { null },
+                    payload.optString("sdpMid", "0"),
                     payload.optInt("sdpMLineIndex"),
                     payload.optString("candidate")
                 )
