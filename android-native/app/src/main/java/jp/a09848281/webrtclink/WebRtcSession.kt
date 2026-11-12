@@ -24,6 +24,7 @@ class WebRtcSession(
 ) {
     private val closed = AtomicBoolean(false)
     private val network = Executors.newSingleThreadScheduledExecutor()
+    private val sender = Executors.newSingleThreadExecutor()
     private var factory: PeerConnectionFactory? = null
     private var eglBase: EglBase? = null
     private var peer: PeerConnection? = null
@@ -204,7 +205,7 @@ class WebRtcSession(
     }
 
     private fun sendSignal(type: String, payload: JSONObject) {
-        network.execute {
+        sender.execute {
             if (closed.get()) return@execute
             var connection: HttpURLConnection? = null
             try {
@@ -232,6 +233,7 @@ class WebRtcSession(
     fun close() {
         if (!closed.compareAndSet(false, true)) return
         try { network.shutdownNow() } catch (_: Throwable) {}
+        try { sender.shutdownNow() } catch (_: Throwable) {}
         try { capturer?.stopCapture() } catch (_: Throwable) {}
         try { capturer?.dispose() } catch (_: Throwable) {}
         capturer = null
