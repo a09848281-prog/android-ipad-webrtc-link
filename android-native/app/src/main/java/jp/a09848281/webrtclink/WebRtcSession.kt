@@ -45,6 +45,7 @@ class WebRtcSession(
 
     private fun stage(message: String) {
         currentStage = message
+        RtcDiagnostics.stage(context, message)
         Log.i(TAG, message)
         report(message)
     }
@@ -60,6 +61,7 @@ class WebRtcSession(
                 createOffer()
             } catch (t: Throwable) {
                 val detail = "${currentStage} / ${t.javaClass.simpleName}: ${t.message ?: "詳細なし"}"
+                RtcDiagnostics.error(context, currentStage, t)
                 report("RTC失敗: $detail")
                 Log.e(TAG, "WebRTC failed at $currentStage", t)
                 close()
@@ -131,8 +133,12 @@ class WebRtcSession(
     }
 
     private fun observer() = object : PeerConnection.Observer {
-        override fun onSignalingChange(state: PeerConnection.SignalingState) { report("シグナリング: $state") }
+        override fun onSignalingChange(state: PeerConnection.SignalingState) {
+            RtcDiagnostics.event(context, "PEER_SIGNALING_STATE=$state")
+            report("シグナリング: $state")
+        }
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            RtcDiagnostics.event(context, "ICE_CONNECTION_STATE=$state")
             report(when (state) {
                 PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> "P2P接続成功！"
                 PeerConnection.IceConnectionState.CHECKING -> "通信経路を確認中…"
@@ -141,9 +147,14 @@ class WebRtcSession(
                 else -> "ICE: $state"
             })
         }
-        override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
+        override fun onIceConnectionReceivingChange(receiving: Boolean) {
+            RtcDiagnostics.event(context, "ICE_RECEIVING=$receiving")
+        }
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
+            RtcDiagnostics.event(context, "ICE_GATHERING_STATE=$state")
+        }
         override fun onIceCandidate(candidate: IceCandidate) {
+            RtcDiagnostics.event(context, "ICE_CANDIDATE_CREATED mid=${candidate.sdpMid} line=${candidate.sdpMLineIndex}")
             val payload = JSONObject().put("candidate", candidate.sdp)
                 .put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex)
             sendSignal("candidate", payload)
@@ -164,6 +175,8 @@ class WebRtcSession(
                 p.setLocalDescription(object : SdpObserver {
                     override fun onSetSuccess() {
                         sendSignal("offer", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description))
+                        stage("RTC-13: ローカルOffer作成完了・GAS送信キュー登録")
+                        RtcDiagnostics.event(context, "SDP offer created; POST queued")
                         report("接続コード $room をiPadに入力してください")
                     }
                     override fun onSetFailure(error: String) = fail("Local SDP設定失敗: $error")
@@ -188,7 +201,15 @@ class WebRtcSession(
                     setRequestProperty("Cache-Control", "no-cache")
                 }
                 try {
-                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    val responseCode = connection.responseCode
+                    val body = if (responseCode in 200..299) {
+                        connection.inputStream.bufferedReader().use { it.readText() }
+                    } else {
+                        connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    }
+                    if (responseCode !in 200..299) {
+                        RtcDiagnostics.event(context, "GAS_POLL_HTTP=$responseCode body=${body.take(200)}")
+                    }
                     val messages = JSONObject(body).optJSONArray("messages")
                     if (messages != null) {
                         for (i in 0 until messages.length()) {
@@ -241,6 +262,7 @@ class WebRtcSession(
             if (closed.get()) return@execute
             var connection: HttpURLConnection? = null
             try {
+                RtcDiagnostics.event(context, "SIGNAL_POST_START type=$type")
                 val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
                     .put("type", type).put("payload", payload)
                     .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
@@ -250,16 +272,31 @@ class WebRtcSession(
                     setRequestProperty("Content-Type", "text/plain; charset=utf-8")
                 }
                 connection.outputStream.use { it.write(message.toString().toByteArray(Charsets.UTF_8)) }
-                connection.inputStream.close()
+                val responseCode = connection.responseCode
+                val responseStream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                val responseBody = responseStream?.bufferedReader()?.use { it.readText() }.orEmpty().take(500)
+                RtcDiagnostics.event(context, "SIGNAL_POST_RESPONSE type=$type http=$responseCode body=$responseBody")
+                if (responseCode !in 200..299) {
+                    report("GAS送信失敗: HTTP $responseCode")
+                } else {
+                    report("GAS送信応答: HTTP $responseCode ($type)")
+                }
             } catch (t: Throwable) {
+                val detail = "${t.javaClass.simpleName}: ${t.message ?: "詳細なし"}"
+                RtcDiagnostics.event(context, "SIGNAL_POST_ERROR type=$type $detail")
+                RtcDiagnostics.error(context, "SIGNAL_POST_$type", t)
                 Log.w(TAG, "GAS send failed", t)
-                report("GAS送信エラー: ${t.message ?: "接続を確認してください"}")
+                report("GAS送信エラー: $detail")
             } finally { connection?.disconnect() }
         }
     }
 
     private fun report(message: String) { if (!closed.get()) onStatus(message) }
-    private fun fail(message: String) { report(message); Log.e(TAG, message) }
+    private fun fail(message: String) {
+        RtcDiagnostics.error(context, currentStage, message)
+        report("RTC失敗: $currentStage / $message")
+        Log.e(TAG, "RTC failure at $currentStage: $message")
+    }
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return

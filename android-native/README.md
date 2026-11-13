@@ -14,7 +14,7 @@ Implemented in this branch:
 - Separate polling and send executors; idempotent cleanup for capture, peer, EGL, and factory resources.
 
 Not yet verified:
-- Successful Gradle build of this WebRTC commit.
+- GitHub Actions Debug APK build: successful on 2026-11-13 (diagnostic branch).
 - Actual Galaxy A22 5G / Android 13 camera and microphone capture.
 - Android-to-iPad P2P video/audio and lock-screen media continuity.
 - Network behavior through all GAS redirects and restrictive Wi-Fi/mobile networks.
@@ -24,7 +24,7 @@ Not yet verified:
 
 1. Install the debug APK on the Galaxy A22 5G.
 2. Open the app and paste the deployed GAS Web App URL ending in `/exec`.
-3. Tap **WebRTC通信を開始** and grant camera/microphone permissions.
+3. Tap **② WebRTCを開始（診断）** and grant camera/microphone permissions.
 4. Keep the app open until the 6-digit room code appears.
 5. Open the existing iPad PWA, set the GAS URL, choose iPad mode, enter the code, and join.
 6. Confirm video and push-to-talk audio in both directions.
@@ -58,3 +58,27 @@ The app now has two separate start buttons so the first test does not initialize
 4. Only after the service-only test is stable, enter the GAS URL, grant camera/microphone permissions, and tap **② WebRTCを開始（次の段階）**. This starts the current WebRTC alpha and may still expose the existing initialization issue.
 
 Do not treat a successful service-only test as proof that WebRTC or background camera/microphone capture works. This is a diagnostic split, not a production-ready release. Test builds are not yet verified on the Galaxy A22 5G.
+
+
+## Crash diagnostics and foreground-service handling
+
+The diagnostic build now saves the most recent RTC initialization stage locally. If Android terminates the process while the service is marked active, the next app launch reports that the previous process appears to have ended unexpectedly. This helps identify whether the last reached step was SDK initialization, EGL, factory creation, PeerConnection creation, camera enumeration, camera startup, audio setup, or SDP creation.
+
+- The room code is shown only after the local SDP offer has been created and its GAS send has been queued. A number displayed during service startup is not treated as proof that RTC is ready.
+- Foreground-service startup errors and uncaught Java/Kotlin exceptions are saved in the diagnostic record.
+- Tap **診断ログをコピー** and share the copied text when reporting a crash. The report intentionally excludes the GAS URL, FCM token, and media.
+- A native SIGSEGV or process kill cannot always be caught by Kotlin. In that case the saved last stage is still useful, but Android Logcat/tombstone output may be required to identify the exact native fault.
+
+## Incoming-call / FCM design status
+
+FCM incoming-call reception is **not implemented in this build**. The current native session is initiated by Android and sends an SDP offer to the iPad. A true incoming-call flow needs additional pieces, not just a Firebase dependency:
+
+1. Register the Android FCM token with a server and securely store the server-side Firebase credentials.
+2. Have the iPad/GAS side send a time-sensitive, user-visible high-priority incoming-call notification.
+3. Show an incoming-call notification/screen and wait for the user to tap **Answer**.
+4. Start the camera/microphone foreground service from the visible answer flow, after permissions have been confirmed.
+5. Add the reverse WebRTC negotiation path so Android can receive the iPad's offer and return an answer.
+
+A high-priority FCM message can provide an exemption for starting a foreground service from the background, but it does not mean the app may silently begin camera/microphone capture. Android's while-in-use camera/microphone restrictions still matter; the user-answer flow is the safer design. FCM high-priority messages can also be downgraded by the system if they are not consistently used for time-sensitive, user-visible notifications.
+
+Do not add a loop that continually restarts the camera/microphone service as a substitute for FCM. It can waste battery and will not make a killed app reliably receive calls.

@@ -2,6 +2,11 @@ package jp.a09848281.webrtclink
 
 import android.Manifest
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +19,22 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
+    private var statusReceiverRegistered = false
+    private val serviceStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val message = intent?.getStringExtra(WebRtcForegroundService.EXTRA_STATUS) ?: return
+            status.text = message
+            val ready = intent.getBooleanExtra(WebRtcForegroundService.EXTRA_READY, false)
+            if (ready) {
+                val room = intent.getStringExtra(WebRtcForegroundService.EXTRA_ROOM).orEmpty()
+                if (room.length == 6 && room.all { it.isDigit() }) {
+                    roomCodeView.text = "接続コード：$room"
+                }
+            } else if (message.startsWith("RTC失敗") || message.contains("起動失敗")) {
+                roomCodeView.text = "接続コード：未準備"
+            }
+        }
+    }
     private lateinit var status: TextView
     private lateinit var gasUrlInput: EditText
     private lateinit var roomCodeView: TextView
@@ -35,7 +56,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply {
-            text = "WebRTC診断モード。サービス単体テスト済みの場合は②から進めてください。"
+            text = RtcDiagnostics.summary(this@MainActivity)
             textSize = 16f
             setPadding(8, 16, 8, 16)
         }
@@ -48,6 +69,15 @@ class MainActivity : ComponentActivity() {
             text = "接続コード：------"
             textSize = 22f
             setPadding(8, 18, 8, 18)
+        }
+        val copyDiagnostics = Button(this).apply {
+            text = "診断ログをコピー"
+            setOnClickListener {
+                val data = RtcDiagnostics.snapshot(this@MainActivity)
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("WebRTC診断ログ", data))
+                status.text = "診断ログをコピーしました。ChatGPTに貼り付けてください。"
+            }
         }
         val serviceTest = Button(this).apply {
             text = "① サービスだけ起動（安全テスト）"
@@ -83,8 +113,31 @@ class MainActivity : ComponentActivity() {
             addView(serviceTest)
             addView(rtcStart)
             addView(stop)
+            addView(copyDiagnostics)
             addView(status)
         })
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!statusReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                serviceStatusReceiver,
+                IntentFilter(WebRtcForegroundService.ACTION_STATUS),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            statusReceiverRegistered = true
+        }
+        status.text = RtcDiagnostics.summary(this)
+    }
+
+    override fun onStop() {
+        if (statusReceiverRegistered) {
+            unregisterReceiver(serviceStatusReceiver)
+            statusReceiverRegistered = false
+        }
+        super.onStop()
     }
 
     private fun startServiceOnly() {
@@ -122,6 +175,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         val room = (100000..999999).random().toString()
+        RtcDiagnostics.beginSession(this, room)
         getPreferences(MODE_PRIVATE).edit().putString("gas_url", gasUrl).apply()
         val intent = Intent(this, WebRtcForegroundService::class.java)
             .setAction(WebRtcForegroundService.ACTION_START_WEBRTC)
@@ -129,9 +183,11 @@ class MainActivity : ComponentActivity() {
             .putExtra(WebRtcForegroundService.EXTRA_ROOM, room)
         try {
             ContextCompat.startForegroundService(this, intent)
-            roomCodeView.text = "接続コード：$room"
-            status.text = "RTC診断を開始しました。番号表示は初期化成功を意味しません。通知の最後のRTC段階を確認してください。"
+            roomCodeView.text = "接続コード：RTC初期化中…"
+            status.text = "サービスを起動しました。RTCの初期化が完了すると接続コードを表示します。"
         } catch (error: Exception) {
+            RtcDiagnostics.error(this, "ACTIVITY_START_SERVICE", error)
+            roomCodeView.text = "接続コード：未準備"
             status.text = "WebRTCサービス起動失敗: ${error.javaClass.simpleName}: ${error.message}"
         }
     }

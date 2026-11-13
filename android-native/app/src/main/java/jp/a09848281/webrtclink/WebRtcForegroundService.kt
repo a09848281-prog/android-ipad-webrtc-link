@@ -27,6 +27,7 @@ class WebRtcForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            publishStatus("サービスを停止しました。")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -35,6 +36,9 @@ class WebRtcForegroundService : Service() {
         try {
             if (action == ACTION_DIAGNOSTIC_ONLY) {
                 startForegroundCompat(buildNotification("診断：サービスのみ起動中"), false)
+                RtcDiagnostics.markServiceActive(this, true)
+                RtcDiagnostics.stage(this, "FGS-OK: サービス単体起動")
+                publishStatus("Foreground Service単体は起動しました。WebRTCは未起動です。")
                 return START_NOT_STICKY
             }
 
@@ -44,9 +48,14 @@ class WebRtcForegroundService : Service() {
             }
 
             startForegroundCompat(buildNotification("WebRTC通信を起動中"), true)
+            RtcDiagnostics.markServiceActive(this, true)
+            RtcDiagnostics.stage(this, "FGS-OK: camera|microphone サービス起動")
+            publishStatus("Foreground Serviceを起動しました。WebRTCを初期化しています。")
             acquireWakeLock()
         } catch (error: Exception) {
+            RtcDiagnostics.error(this, "FOREGROUND_SERVICE_START", error)
             android.util.Log.e(TAG, "Foreground service start failed", error)
+            publishStatus("Foreground Service起動失敗: ${error.javaClass.simpleName}: ${error.message}")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -55,7 +64,9 @@ class WebRtcForegroundService : Service() {
         val room = intent.getStringExtra(EXTRA_ROOM).orEmpty()
         if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
             !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}"))) {
+            RtcDiagnostics.error(this, "SESSION_ARGUMENTS", "GAS URLまたは6桁接続コードが不正です。")
             updateNotification("設定エラー：GAS URLまたは接続コード")
+            publishStatus("WebRTC起動失敗：GAS URLまたは6桁接続コードが不正です。")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -63,6 +74,11 @@ class WebRtcForegroundService : Service() {
         webRtcSession?.close()
         webRtcSession = WebRtcSession(applicationContext, gasUrl, room) { message ->
             updateNotification(message)
+            val ready = message.startsWith("接続コード $room")
+            publishStatus(message, ready)
+            if (message.startsWith("RTC失敗:")) {
+                stopSelf()
+            }
         }.also { it.start() }
         return START_NOT_STICKY
     }
@@ -120,11 +136,22 @@ class WebRtcForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        RtcDiagnostics.markServiceActive(this, false)
         webRtcSession?.close()
         webRtcSession = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
+    }
+
+    private fun publishStatus(message: String, ready: Boolean = false) {
+        RtcDiagnostics.status(this, message)
+        val update = Intent(ACTION_STATUS)
+            .setPackage(packageName)
+            .putExtra(EXTRA_STATUS, message)
+            .putExtra(EXTRA_READY, ready)
+        if (ready) update.putExtra(EXTRA_ROOM, message.substringAfter("接続コード ").substringBefore(" "))
+        sendBroadcast(update)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -134,6 +161,9 @@ class WebRtcForegroundService : Service() {
         const val ACTION_START_WEBRTC = "jp.a09848281.webrtclink.START_WEBRTC"
         const val ACTION_DIAGNOSTIC_ONLY = "jp.a09848281.webrtclink.DIAGNOSTIC_ONLY"
         const val ACTION_STOP = "jp.a09848281.webrtclink.STOP"
+        const val ACTION_STATUS = "jp.a09848281.webrtclink.STATUS"
+        const val EXTRA_STATUS = "status_message"
+        const val EXTRA_READY = "room_ready"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_ROOM = "room_code"
         private const val CHANNEL_ID = "webrtc_session"
