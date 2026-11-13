@@ -33,7 +33,7 @@ object RtcDiagnostics {
             .remove(KEY_ERROR)
             .remove(KEY_STACK)
             .putBoolean(KEY_SERVICE_ACTIVE, false)
-            .apply()
+            .commit()
     }
 
     fun stage(context: Context, message: String) {
@@ -41,7 +41,7 @@ object RtcDiagnostics {
             .putString(KEY_STAGE, message)
             .putString(KEY_STATUS, message)
             .putLong(KEY_UPDATED, System.currentTimeMillis())
-            .apply()
+            .commit()
     }
 
     fun status(context: Context, message: String) {
@@ -55,7 +55,7 @@ object RtcDiagnostics {
         prefs(context).edit()
             .putBoolean(KEY_SERVICE_ACTIVE, active)
             .putLong(KEY_UPDATED, System.currentTimeMillis())
-            .apply()
+            .commit()
     }
 
     fun error(context: Context, stage: String, message: String, stackTrace: String? = null) {
@@ -65,7 +65,7 @@ object RtcDiagnostics {
             .putString(KEY_ERROR, message)
             .putLong(KEY_UPDATED, System.currentTimeMillis())
         if (!stackTrace.isNullOrBlank()) editor.putString(KEY_STACK, stackTrace.take(6000))
-        editor.apply()
+        editor.commit()
     }
 
     fun error(context: Context, stage: String, throwable: Throwable) {
