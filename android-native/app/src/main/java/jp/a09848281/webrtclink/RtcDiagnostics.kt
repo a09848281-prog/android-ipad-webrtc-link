@@ -113,12 +113,11 @@ object RtcDiagnostics {
     fun snapshot(context: Context): String {
         val p = prefs(context)
         val stack = p.getString(KEY_STACK, "記録なし") ?: "記録なし"
-        val room = p.getString(KEY_ROOM, "なし") ?: "なし"
         return buildString {
             appendLine("WebRTC Link 診断ログ")
             appendLine("端末: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android API: ${Build.VERSION.SDK_INT}")
-            appendLine("Room: $room")
+            appendLine("Room: 非表示（共有ログに接続番号を含めません）")
             appendLine("最後の段階: ${p.getString(KEY_STAGE, "なし")}")
             appendLine("最後の状態: ${p.getString(KEY_STATUS, "なし")}")
             appendLine("エラー: ${p.getString(KEY_ERROR, "なし")}")
