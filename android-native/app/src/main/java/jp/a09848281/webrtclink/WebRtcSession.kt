@@ -133,8 +133,12 @@ class WebRtcSession(
     }
 
     private fun observer() = object : PeerConnection.Observer {
-        override fun onSignalingChange(state: PeerConnection.SignalingState) { report("シグナリング: $state") }
+        override fun onSignalingChange(state: PeerConnection.SignalingState) {
+            RtcDiagnostics.event(context, "PEER_SIGNALING_STATE=$state")
+            report("シグナリング: $state")
+        }
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            RtcDiagnostics.event(context, "ICE_CONNECTION_STATE=$state")
             report(when (state) {
                 PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> "P2P接続成功！"
                 PeerConnection.IceConnectionState.CHECKING -> "通信経路を確認中…"
@@ -143,9 +147,14 @@ class WebRtcSession(
                 else -> "ICE: $state"
             })
         }
-        override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
+        override fun onIceConnectionReceivingChange(receiving: Boolean) {
+            RtcDiagnostics.event(context, "ICE_RECEIVING=$receiving")
+        }
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
+            RtcDiagnostics.event(context, "ICE_GATHERING_STATE=$state")
+        }
         override fun onIceCandidate(candidate: IceCandidate) {
+            RtcDiagnostics.event(context, "ICE_CANDIDATE_CREATED mid=${candidate.sdpMid} line=${candidate.sdpMLineIndex}")
             val payload = JSONObject().put("candidate", candidate.sdp)
                 .put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex)
             sendSignal("candidate", payload)
@@ -192,7 +201,15 @@ class WebRtcSession(
                     setRequestProperty("Cache-Control", "no-cache")
                 }
                 try {
-                    val body = connection.inputStream.bufferedReader().use { it.readText() }
+                    val responseCode = connection.responseCode
+                    val body = if (responseCode in 200..299) {
+                        connection.inputStream.bufferedReader().use { it.readText() }
+                    } else {
+                        connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    }
+                    if (responseCode !in 200..299) {
+                        RtcDiagnostics.event(context, "GAS_POLL_HTTP=$responseCode body=${body.take(200)}")
+                    }
                     val messages = JSONObject(body).optJSONArray("messages")
                     if (messages != null) {
                         for (i in 0 until messages.length()) {
