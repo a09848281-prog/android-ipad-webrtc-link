@@ -5,6 +5,8 @@
     gasUrl:$("gasUrl"),gasStatus:$("gasStatus"),saveGas:$("saveGas"),hostMode:$("hostMode"),viewerMode:$("viewerMode"),
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
+    switchCamera:$("switchCamera"),videoQuality:$("videoQuality"),videoFps:$("videoFps"),
+    applyVideoSettings:$("applyVideoSettings"),remoteControlStatus:$("remoteControlStatus"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
     ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log")
   };
@@ -12,6 +14,7 @@
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false;
+  let androidFacingMode = "environment";
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -80,6 +83,7 @@
         if(pc.signalingState!=="have-local-offer") return;
         await pc.setRemoteDescription(new RTCSessionDescription(m.payload)); await flushCandidates(); log("応答を受信しました。接続処理中です…");
       }else if(m.type==="candidate" && m.payload){ await addRemoteCandidate(m.payload); }
+      else if(m.type==="media-control" && role==="android"){ await applyRemoteMediaControl(m.payload || {}); }
     }catch(e){ console.error(e); log("接続情報の処理に失敗しました: "+e.message); }
   }
   function setupPeer(){
@@ -87,7 +91,7 @@
     pc.onicecandidate=(event)=>{if(event.candidate) sendSignal("candidate",event.candidate.toJSON(),role==="android"?"ipad":"android").catch(()=>{});};
     pc.onconnectionstatechange=()=>{
       const s=pc.connectionState;
-      if(s==="connected"){setState("接続中","ok");log("端末同士が接続されました。");}
+      if(s==="connected"){setState("接続中","ok");log("端末同士が接続されました。");setRemoteControlsEnabled(role==="ipad");}
       else if(s==="connecting"){setState("接続処理中","wait");}
       else if(s==="failed"){setState("接続失敗");log("P2P接続に失敗しました。別のWi-Fiやモバイル回線ではTURNサーバーが必要になる場合があります。");}
       else if(s==="disconnected"){setState("切断");}
@@ -102,6 +106,40 @@
     };
     pc.oniceconnectionstatechange=()=>{if(pc.iceConnectionState==="checking")setState("経路確認中","wait");};
   }
+  function setRemoteControlsEnabled(enabled){
+    [els.switchCamera,els.videoQuality,els.videoFps,els.applyVideoSettings].forEach(el=>{if(el)el.disabled=!enabled;});
+    if(els.remoteControlStatus) els.remoteControlStatus.textContent=enabled?"Androidカメラを操作できます。":"Androidと接続すると操作できます。";
+  }
+  async function sendMediaControl(payload){
+    if(role!=="ipad" || !started || !pc || pc.connectionState!=="connected") throw new Error("Androidとの接続が完了してから操作してください。");
+    await sendSignal("media-control",payload,"android");
+    els.remoteControlStatus.textContent="Androidへ設定を送信しました。";
+  }
+  async function applyRemoteMediaControl(payload){
+    if(role!=="android" || !localStream) return;
+    const qualityMap={low:{width:640,height:480},medium:{width:1280,height:720},high:{width:1920,height:1080}};
+    const q=qualityMap[payload.quality] || qualityMap.medium;
+    const fps=Math.max(5,Math.min(30,Number(payload.fps)||24));
+    if(payload.action==="switch-camera"){
+      const next=androidFacingMode==="environment"?"user":"environment";
+      const replacement=await getMedia({video:{facingMode:{ideal:next},width:{ideal:q.width},height:{ideal:q.height},frameRate:{ideal:fps,max:fps}},audio:false});
+      const nextTrack=replacement.getVideoTracks()[0];
+      if(!nextTrack) throw new Error("切り替え先カメラを取得できませんでした。");
+      const oldTrack=localStream.getVideoTracks()[0];
+      const sender=pc && pc.getSenders().find(s=>s.track && s.track.kind==="video");
+      if(sender) await sender.replaceTrack(nextTrack);
+      if(oldTrack){localStream.removeTrack(oldTrack);oldTrack.stop();}
+      localStream.addTrack(nextTrack);
+      androidFacingMode=next;
+      if(els.localVideo) els.localVideo.srcObject=localStream;
+      log("Androidカメラを"+(next==="environment"?"背面":"前面")+"に切り替えました。");
+      return;
+    }
+    const track=localStream.getVideoTracks()[0];
+    if(!track) throw new Error("Androidの映像トラックが見つかりません。");
+    await track.applyConstraints({width:{ideal:q.width},height:{ideal:q.height},frameRate:{ideal:fps,max:fps}});
+    log("Android映像設定を変更しました（"+q.width+"×"+q.height+" / "+fps+"fps）。");
+  }
   async function getMedia(constraints){
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("このブラウザではカメラ・マイクを利用できません。HTTPSのページで開いてください。");
     return navigator.mediaDevices.getUserMedia(constraints);
@@ -109,7 +147,8 @@
   async function startAndroid(){
     if(!validGas()) throw new Error("先に正しいGAS WebアプリURL（/exec）を保存してください。");
     els.startHost.disabled=true; log("Androidのカメラ・マイクを起動しています…");
-    localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}});
+    androidFacingMode="environment";
+    localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:androidFacingMode},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:24}}});
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
     started=true; els.disconnect.disabled=false; setState("接続待機中","wait");startPolling();
@@ -123,7 +162,7 @@
     localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
-    started=true;els.disconnect.disabled=false;els.ptt.disabled=false;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.ptt.disabled=false;setRemoteControlsEnabled(false);setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(){
@@ -132,6 +171,7 @@
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
+    setRemoteControlsEnabled(false);
     els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.ptt.classList.remove("active");els.disconnect.disabled=true;
     els.startHost.disabled=false;els.joinRoom.disabled=false;els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log("切断しました。");
@@ -152,6 +192,8 @@
   els.joinRoom.addEventListener("click",()=>joinAndroid().catch(e=>{console.error(e);log(e.message);els.joinRoom.disabled=false;}));
   els.copyCode.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(room);log("接続コードをコピーしました。");}catch(_){log("コードを長押ししてコピーしてください。");}});
   els.disconnect.addEventListener("click",stop);
+  els.switchCamera.addEventListener("click",()=>sendMediaControl({action:"switch-camera",quality:els.videoQuality.value,fps:Number(els.videoFps.value)}).catch(e=>{els.remoteControlStatus.textContent=e.message;}));
+  els.applyVideoSettings.addEventListener("click",()=>sendMediaControl({action:"set-video",quality:els.videoQuality.value,fps:Number(els.videoFps.value)}).catch(e=>{els.remoteControlStatus.textContent=e.message;}));
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
