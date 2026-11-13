@@ -44,6 +44,15 @@ object RtcDiagnostics {
             .commit()
     }
 
+    /** Append a short, privacy-safe event trail for asynchronous signaling diagnostics. */
+    fun event(context: Context, message: String) {
+        val p = prefs(context)
+        val old = p.getString("event_log", "").orEmpty()
+        val stamp = DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date())
+        val next = (old.lines().filter { it.isNotBlank() } + "[$stamp] ${message.take(240)}")
+            .takeLast(35).joinToString("\n")
+        p.edit().putString("event_log", next).putLong(KEY_UPDATED, System.currentTimeMillis()).commit()
+    }
     fun status(context: Context, message: String) {
         prefs(context).edit()
             .putString(KEY_STATUS, message)
@@ -124,6 +133,9 @@ object RtcDiagnostics {
             appendLine("更新時刻: ${p.getLong(KEY_UPDATED, 0L)}")
             appendLine("Stack trace:")
             append(stack.take(6000))
+            appendLine()
+            appendLine("通信イベント履歴:")
+            append(p.getString("event_log", "記録なし") ?: "記録なし")
         }
     }
 }
