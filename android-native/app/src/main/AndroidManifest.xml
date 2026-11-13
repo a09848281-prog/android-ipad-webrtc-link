@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
+        android:name=".WebRtcLinkApplication"
         android:allowBackup="false"
         android:label="WebRTC Link"
         android:supportsRtl="true"
