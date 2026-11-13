@@ -45,6 +45,7 @@ class WebRtcSession(
 
     private fun stage(message: String) {
         currentStage = message
+        RtcDiagnostics.stage(context, message)
         Log.i(TAG, message)
         report(message)
     }
@@ -60,6 +61,7 @@ class WebRtcSession(
                 createOffer()
             } catch (t: Throwable) {
                 val detail = "${currentStage} / ${t.javaClass.simpleName}: ${t.message ?: "詳細なし"}"
+                RtcDiagnostics.error(context, currentStage, t)
                 report("RTC失敗: $detail")
                 Log.e(TAG, "WebRTC failed at $currentStage", t)
                 close()
@@ -164,6 +166,7 @@ class WebRtcSession(
                 p.setLocalDescription(object : SdpObserver {
                     override fun onSetSuccess() {
                         sendSignal("offer", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description))
+                        stage("RTC-13: ローカルOffer作成完了・GAS送信要求済み")
                         report("接続コード $room をiPadに入力してください")
                     }
                     override fun onSetFailure(error: String) = fail("Local SDP設定失敗: $error")
@@ -259,7 +262,11 @@ class WebRtcSession(
     }
 
     private fun report(message: String) { if (!closed.get()) onStatus(message) }
-    private fun fail(message: String) { report(message); Log.e(TAG, message) }
+    private fun fail(message: String) {
+        RtcDiagnostics.error(context, currentStage, message)
+        report("RTC失敗: $currentStage / $message")
+        Log.e(TAG, "RTC failure at $currentStage: $message")
+    }
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return
