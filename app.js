@@ -83,7 +83,17 @@
         if(pc.signalingState!=="have-local-offer") return;
         await pc.setRemoteDescription(new RTCSessionDescription(m.payload)); await flushCandidates(); log("応答を受信しました。接続処理中です…");
       }else if(m.type==="candidate" && m.payload){ await addRemoteCandidate(m.payload); }
-      else if(m.type==="media-control" && role==="android"){ await applyRemoteMediaControl(m.payload || {}); }
+      else if(m.type==="media-control" && role==="android"){
+        try{
+          await applyRemoteMediaControl(m.payload || {});
+          await sendSignal("media-control-result",{ok:true,message:"Android側の設定を変更しました。"},"ipad");
+        }catch(controlError){
+          await sendSignal("media-control-result",{ok:false,message:controlError.message || "設定を変更できませんでした。"},"ipad").catch(()=>{});
+          throw controlError;
+        }
+      }else if(m.type==="media-control-result" && role==="ipad" && m.payload){
+        els.remoteControlStatus.textContent=m.payload.message || (m.payload.ok?"設定を適用しました。":"設定に失敗しました。");
+      }
     }catch(e){ console.error(e); log("接続情報の処理に失敗しました: "+e.message); }
   }
   function setupPeer(){
