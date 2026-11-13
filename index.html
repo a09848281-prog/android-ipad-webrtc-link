@@ -47,6 +47,25 @@
         <label for="joinCode">Android側に表示された6桁コード</label>
         <input id="joinCode" type="text" inputmode="numeric" maxlength="6" placeholder="例：123456">
         <button id="joinRoom" class="primary full">接続する</button>
+        <div class="remote-controls">
+          <h3>🎛️ Androidカメラ設定（iPadから操作）</h3>
+          <button id="switchCamera" class="secondary full" type="button" disabled>🔄 カメラを切り替える</button>
+          <label for="videoQuality">画質</label>
+          <select id="videoQuality" disabled>
+            <option value="low">低画質（640×480）</option>
+            <option value="medium" selected>標準（1280×720）</option>
+            <option value="high">高画質（1920×1080）</option>
+          </select>
+          <label for="videoFps">フレームレート</label>
+          <select id="videoFps" disabled>
+            <option value="15">15 FPS（軽量）</option>
+            <option value="24" selected>24 FPS（標準）</option>
+            <option value="30">30 FPS（なめらか）</option>
+          </select>
+          <button id="applyVideoSettings" class="primary full" type="button" disabled>設定をAndroidへ送信</button>
+          <p class="hint">設定は接続中のAndroid端末に送信されます。端末やカメラによって選べない画質・FPSがあります。</p>
+          <p id="remoteControlStatus" class="small-status" role="status">Androidと接続すると操作できます。</p>
+        </div>
         <p class="hint">iPadのマイク使用許可が表示されたら許可してください。</p>
       </div>
     </section>
