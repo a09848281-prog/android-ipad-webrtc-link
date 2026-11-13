@@ -166,7 +166,8 @@ class WebRtcSession(
                 p.setLocalDescription(object : SdpObserver {
                     override fun onSetSuccess() {
                         sendSignal("offer", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description))
-                        stage("RTC-13: ローカルOffer作成完了・GAS送信要求済み")
+                        stage("RTC-13: ローカルOffer作成完了・GAS送信キュー登録")
+                        RtcDiagnostics.event(context, "SDP offer created; POST queued")
                         report("接続コード $room をiPadに入力してください")
                     }
                     override fun onSetFailure(error: String) = fail("Local SDP設定失敗: $error")
@@ -244,6 +245,7 @@ class WebRtcSession(
             if (closed.get()) return@execute
             var connection: HttpURLConnection? = null
             try {
+                RtcDiagnostics.event(context, "SIGNAL_POST_START type=$type")
                 val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
                     .put("type", type).put("payload", payload)
                     .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
@@ -253,10 +255,21 @@ class WebRtcSession(
                     setRequestProperty("Content-Type", "text/plain; charset=utf-8")
                 }
                 connection.outputStream.use { it.write(message.toString().toByteArray(Charsets.UTF_8)) }
-                connection.inputStream.close()
+                val responseCode = connection.responseCode
+                val responseStream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                val responseBody = responseStream?.bufferedReader()?.use { it.readText() }.orEmpty().take(500)
+                RtcDiagnostics.event(context, "SIGNAL_POST_RESPONSE type=$type http=$responseCode body=$responseBody")
+                if (responseCode !in 200..299) {
+                    report("GAS送信失敗: HTTP $responseCode")
+                } else {
+                    report("GAS送信応答: HTTP $responseCode ($type)")
+                }
             } catch (t: Throwable) {
+                val detail = "${t.javaClass.simpleName}: ${t.message ?: "詳細なし"}"
+                RtcDiagnostics.event(context, "SIGNAL_POST_ERROR type=$type $detail")
+                RtcDiagnostics.error(context, "SIGNAL_POST_$type", t)
                 Log.w(TAG, "GAS send failed", t)
-                report("GAS送信エラー: ${t.message ?: "接続を確認してください"}")
+                report("GAS送信エラー: $detail")
             } finally { connection?.disconnect() }
         }
     }
