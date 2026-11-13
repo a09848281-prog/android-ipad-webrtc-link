@@ -14,7 +14,7 @@ Implemented in this branch:
 - Separate polling and send executors; idempotent cleanup for capture, peer, EGL, and factory resources.
 
 Not yet verified:
-- Successful Gradle build of this WebRTC commit.
+- GitHub Actions Debug APK build: successful on 2026-11-13 (diagnostic branch).
 - Actual Galaxy A22 5G / Android 13 camera and microphone capture.
 - Android-to-iPad P2P video/audio and lock-screen media continuity.
 - Network behavior through all GAS redirects and restrictive Wi-Fi/mobile networks.
@@ -24,7 +24,7 @@ Not yet verified:
 
 1. Install the debug APK on the Galaxy A22 5G.
 2. Open the app and paste the deployed GAS Web App URL ending in `/exec`.
-3. Tap **WebRTC通信を開始** and grant camera/microphone permissions.
+3. Tap **② WebRTCを開始（診断）** and grant camera/microphone permissions.
 4. Keep the app open until the 6-digit room code appears.
 5. Open the existing iPad PWA, set the GAS URL, choose iPad mode, enter the code, and join.
 6. Confirm video and push-to-talk audio in both directions.
