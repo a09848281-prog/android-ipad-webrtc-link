@@ -12,6 +12,7 @@ function doGet(e) {
   if (p.action === "health") return jsonpOutput_({ ok: true, service: "WebRTC Link Signaling", version: "0.3" }, p.callback);
   if (p.action === "pair_complete") return pairComplete_(p);
   if (p.action === "device_status") return deviceStatus_(p);
+  if (p.action === "unpair") return unpairDevice_(p);
   return output_({ ok: true, service: "WebRTC Link Signaling", version: "0.3" });
 }
 
@@ -123,7 +124,11 @@ function pairStart_(m) {
   lock.waitLock(8000);
   try {
     const props = PropertiesService.getScriptProperties();
-    props.setProperty("device_auth_" + deviceId, authToken);
+    const existingTokenHash = props.getProperty("device_auth_" + deviceId);
+    if (existingTokenHash && existingTokenHash !== tokenHash_(authToken)) {
+      return output_({ ok: false, error: "device_id_conflict" });
+    }
+    props.setProperty("device_auth_" + deviceId, tokenHash_(authToken));
     CacheService.getScriptCache().put("pair_code_" + pairCode,
       JSON.stringify({ deviceId: deviceId, authToken: authToken, label: label }), 300);
   } finally {
@@ -166,10 +171,28 @@ function deviceStatus_(p) {
   return jsonpOutput_({ ok: true, ...presence }, callback);
 }
 
+function unpairDevice_(p) {
+  const callback = String(p.callback || "");
+  const deviceId = String(p.deviceId || "");
+  const authToken = String(p.authToken || "");
+  if (!authorizedDevice_(deviceId, authToken)) {
+    return jsonpOutput_({ ok: false, error: "unauthorized" }, callback);
+  }
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty("device_auth_" + deviceId);
+  CacheService.getScriptCache().remove("device_presence_" + deviceId);
+  return jsonpOutput_({ ok: true }, callback);
+}
+
+function tokenHash_(token) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token, Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(digest);
+}
+
 function authorizedDevice_(deviceId, authToken) {
   if (!/^[A-Za-z0-9_-]{16,80}$/.test(deviceId) || !/^[A-Za-z0-9_-]{40,100}$/.test(authToken)) return false;
   const saved = PropertiesService.getScriptProperties().getProperty("device_auth_" + deviceId);
-  return !!saved && saved === authToken;
+  return !!saved && saved === tokenHash_(authToken);
 }
 
 function queueKey_(room, role) {
