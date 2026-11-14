@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
         gasUrlInput = EditText(this).apply {
             hint = "GAS WebアプリURL（https://script.google.com/macros/s/.../exec）"
             setSingleLine(true)
-            setText(getPreferences(MODE_PRIVATE).getString("gas_url", ""))
+            setText(getSharedPreferences("webrtc_link", MODE_PRIVATE).getString("gas_url", ""))
         }
         pairingCodeView = TextView(this).apply {
             text = "ペアリングコード：未発行"
@@ -167,7 +167,7 @@ class MainActivity : ComponentActivity() {
         val stop = Button(this).apply {
             text = "サービスを停止"
             setOnClickListener {
-                stopService(Intent(this@MainActivity, WebRtcForegroundService::class.java))
+                startService(Intent(this@MainActivity, WebRtcForegroundService::class.java).setAction(WebRtcForegroundService.ACTION_STOP))
                 webRtcStarted = false
                 status.text = "サービスを停止しました。"
                 roomCodeView.text = "接続コード：------"
@@ -320,6 +320,8 @@ class MainActivity : ComponentActivity() {
         }
         val room = (100000..999999).random().toString()
         prefs.edit().putString("gas_url", gasUrl).apply()
+        prefs.edit().putString("active_gas_url", gasUrl).putString("active_room", room)
+            .putString("active_device_id", deviceId).putString("active_auth_token", authToken).putBoolean("active_session", true).apply()
         val intent = Intent(this, WebRtcForegroundService::class.java)
             .setAction(WebRtcForegroundService.ACTION_START_WEBRTC)
             .putExtra(WebRtcForegroundService.EXTRA_GAS_URL, gasUrl)
