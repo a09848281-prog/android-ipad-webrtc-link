@@ -188,6 +188,13 @@
         },50000);
         return;
       }
+      if(m.type==="camera_switch_result" && role==="ipad"){
+        if(window.cameraSwitchTimeout){clearTimeout(window.cameraSwitchTimeout);window.cameraSwitchTimeout=null;}
+        els.cameraSwitch.disabled=false;
+        const p=m.payload||{};
+        log(p.ok ? (p.front ? "Androidの前面カメラに切り替わりました。" : "Androidの背面カメラに切り替わりました。") : "カメラ切り替え失敗: "+String(p.reason||"Android側で切り替えできませんでした。"));
+        return;
+      }
       if(m.type==="location_result" && role==="ipad"){
         if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}
         const p=m.payload||{};
@@ -398,8 +405,16 @@
     els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;setCameraControlsEnabled(false);els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log(reason);
   }
-  function pttDown(e){if(role!=="ipad"||!pttTrack||!started)return;e.preventDefault();pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 送信中…（離すとミュート）";}
-  function pttUp(){if(pttTrack){pttTrack.enabled=false;els.ptt.classList.remove("active");els.ptt.textContent="🎙️ 押している間だけ話す";}}
+  function pttDown(e){
+    if(role!=="ipad"||!pttTrack||!started||!pc||pc.connectionState!=="connected")return;
+    e.preventDefault();
+    try{if(els.ptt.setPointerCapture&&e.pointerId!==undefined)els.ptt.setPointerCapture(e.pointerId);}catch(_){}
+    pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 音声送信中・離すと停止";
+  }
+  function pttUp(){
+    if(pttTrack)pttTrack.enabled=false;
+    if(els.ptt){els.ptt.classList.remove("active");els.ptt.textContent="🎙️ 押している間だけ話す";}
+  }
 
   async function runDiagnostics(){
     const lines=[];
@@ -515,7 +530,7 @@
     els.locationStatus.textContent="Androidへ1回限りの取得を要求しています…";
     try{await sendSignal("location_request",{oneShot:true},"android");}
     catch(error){els.locationStatus.textContent="要求を送信できませんでした: "+error.message;els.requestLocation.disabled=false;return;}
-    locationTimeout=setTimeout(()=>{locationTimeout=null;els.locationStatus.textContent="応答がありません。Androidの接続・位置情報許可を確認してください。";els.requestLocation.disabled=false;},35000);
+    locationTimeout=setTimeout(()=>{locationTimeout=null;els.locationStatus.textContent="応答がありません。Androidの接続・位置情報許可を確認してください。";els.requestLocation.disabled=false;},55000);
   });
 
   els.micToggle.addEventListener("click",()=>{
@@ -537,9 +552,11 @@
     if(role==="ipad"){
       if(!started||!pc||pc.connectionState!=="connected"){log("Androidとの接続後にカメラを切り替えられます。");return;}
       els.cameraSwitch.disabled=true;
-      try{await sendSignal("camera_switch",{requestedAt:Date.now()},"android");log("Androidへカメラ切り替えを要求しました。");}
-      catch(error){log("カメラ切り替え要求に失敗しました: "+error.message);}
-      setTimeout(()=>{if(started)els.cameraSwitch.disabled=false;},1800);
+      log("Androidへカメラ切り替えを送信しています…");
+      try{await sendSignal("camera_switch",{requestedAt:Date.now()},"android");}
+      catch(error){log("カメラ切り替え要求に失敗しました: "+error.message);els.cameraSwitch.disabled=false;return;}
+      if(locationTimeout)clearTimeout(locationTimeout);
+      window.cameraSwitchTimeout=setTimeout(()=>{window.cameraSwitchTimeout=null;els.cameraSwitch.disabled=false;log("Androidから切り替え結果が届きません。接続状態を確認してください。");},12000);
       return;
     }
     if(!localStream||!pc||!started)return;
@@ -569,8 +586,9 @@
   els.zoomRange.addEventListener("input",applyZoom);
   els.torchToggle.addEventListener("change",applyTorch);
   els.adaptiveToggle.addEventListener("change",()=>{adaptiveLastLevel="high";updateSenderBitrate();log(els.adaptiveToggle.checked?"自動画質調整を有効にしました。":"自動画質調整を停止しました。");});
-  els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
-  document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
+  els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
+  window.addEventListener("pointerup",pttUp);window.addEventListener("blur",pttUp);
+  document.addEventListener("visibilitychange",()=>{if(document.hidden)pttUp();});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(err => console.warn("PWA worker registration failed", err)));
   }
