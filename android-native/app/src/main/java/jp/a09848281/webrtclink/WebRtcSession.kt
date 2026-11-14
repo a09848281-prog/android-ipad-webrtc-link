@@ -343,6 +343,7 @@ class WebRtcSession(
         if (message.optString("room") != room || message.optString("to") != "android") return
         when (message.optString("type")) {
             "location_request" -> requestOneShotLocation()
+            "camera_switch" -> switchCamera()
             "hangup" -> {
                 report("相手側が切断しました。")
                 close()
