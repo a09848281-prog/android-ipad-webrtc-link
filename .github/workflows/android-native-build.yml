@@ -4,14 +4,23 @@ on:
   push:
     branches:
       - android-native-stable-v1
+      - feature/full-webrtc-controls-v2
     paths:
       - "android-native/**"
+      - "app.js"
+      - "index.html"
+      - "style.css"
+      - "gas/**"
       - ".github/workflows/android-native-build.yml"
   pull_request:
     paths:
       - "android-native/**"
       - ".github/workflows/android-native-build.yml"
   workflow_dispatch:
+
+concurrency:
+  group: webrtc-link-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -31,6 +40,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Check PWA JavaScript syntax
+        run: node --check app.js
+      - name: Check GAS JavaScript syntax
+        run: node --check < gas/Code.gs
+      - name: Validate Android manifest XML
+        run: python -c "import xml.etree.ElementTree as ET; ET.parse('android-native/app/src/main/AndroidManifest.xml')"
       - name: Assemble debug APK
         working-directory: android-native
         run: gradle --no-daemon :app:assembleDebug
