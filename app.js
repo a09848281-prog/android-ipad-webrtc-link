@@ -66,6 +66,17 @@
     updateDeviceActions();return result;
   }
 
+  async function revokeRegisteredDevice(device){
+    return await new Promise((resolve,reject)=>{
+      const callback="webrtcUnpairCallback";const script=document.createElement("script");
+      const timer=setTimeout(()=>{cleanup();reject(new Error("登録解除がタイムアウトしました。"));},8000);
+      function cleanup(){clearTimeout(timer);script.remove();try{delete window[callback];}catch(_){}}
+      window[callback]=(data)=>{cleanup();if(data&&data.ok)resolve(true);else reject(new Error((data&&data.error)||"登録解除に失敗しました。"));};
+      const url=new URL(normalizeGasUrl());url.searchParams.set("action","unpair");url.searchParams.set("deviceId",device.deviceId);url.searchParams.set("authToken",device.authToken);url.searchParams.set("callback",callback);url.searchParams.set("_",String(Date.now()));
+      script.src=url.toString();script.onerror=()=>{cleanup();reject(new Error("GASに接続できませんでした。"));};document.head.appendChild(script);
+    });
+  }
+
   async function registerPairedDevice(){
     const code=els.pairCodeInput.value.replace(/\D/g,"");
     if(!/^\d{8}$/.test(code)){els.deviceManagerStatus.textContent="8桁のペアリングコードを入力してください。";return;}
@@ -460,11 +471,19 @@
     registeredDevices=registeredDevices.map(d=>d.deviceId===activeDevice.deviceId?{...d,favorite:!d.favorite}:d);
     saveRegisteredDevices();renderRegisteredDevices();
   });
-  els.removeDevice.addEventListener("click",()=>{
-    if(!activeDevice||!confirm("このiPadから登録情報を削除しますか？Android側の登録トークンは失効しません。"))return;
-    registeredDevices=registeredDevices.filter(d=>d.deviceId!==activeDevice.deviceId);
-    saveRegisteredDevices();authDeviceId="";authToken="";activeDevice=null;renderRegisteredDevices();
-    els.deviceManagerStatus.textContent="このiPadから登録情報を削除しました。Android側のトークンは別途再発行が必要です。";
+  els.removeDevice.addEventListener("click",async()=>{
+    if(!activeDevice||!confirm("このAndroid端末の登録を解除しますか？このiPad以外に保存された同じ登録情報も無効になります。"))return;
+    const target=activeDevice;els.removeDevice.disabled=true;
+    try{
+      if(role==="ipad"&&started&&room&&authDeviceId===target.deviceId){
+        try{await sendSignal("hangup",{reason:"device-unpaired"},"android");}catch(_){}
+        await stop({notify:false,reason:"登録端末を解除しました。"});
+      }
+      await revokeRegisteredDevice(target);
+      registeredDevices=registeredDevices.filter(d=>d.deviceId!==target.deviceId);
+      saveRegisteredDevices();authDeviceId="";authToken="";activeDevice=null;activePresence=null;renderRegisteredDevices();
+      els.deviceManagerStatus.textContent="登録を解除し、サーバー側の認証トークンも失効させました。";
+    }catch(error){els.deviceManagerStatus.textContent="登録解除に失敗しました: "+error.message;updateDeviceActions();}
   });
   els.saveGas.addEventListener("click",()=>{
     if(!validGas()){els.gasStatus.textContent="URLを確認してください";log("GASの「ウェブアプリ URL」を使ってください。例：https://script.google.com/macros/s/.../exec（末尾は /exec）。URLの前後の空白や引用符は自動で除去します。");return;}
