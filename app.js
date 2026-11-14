@@ -64,6 +64,18 @@
   }
 
   function log(message){ els.log.textContent = message; }
+  function recordDeviceConnection(){
+    if(role!=="ipad"||!activeDevice)return;
+    const now=Date.now();
+    registeredDevices=registeredDevices.map(device=>{
+      if(device.deviceId!==activeDevice.deviceId)return device;
+      const history=Array.isArray(device.history)?device.history:[];
+      history.unshift({time:now,room:room});
+      return {...device,lastConnected:now,history:history.slice(0,30)};
+    });
+    saveRegisteredDevices();activeDevice=registeredDevices.find(d=>d.deviceId===authDeviceId)||activeDevice;
+    els.deviceManagerStatus.textContent="接続履歴を保存しました。最終接続："+new Date(now).toLocaleString();
+  }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
   function gas(){ return els.gasUrl.value.trim().replace(/^["'\s]+|["'\s]+$/g, "").replace(/[\u200B-\u200D\uFEFF]/g, ""); }
   function normalizeGasUrl(){
@@ -86,13 +98,14 @@
   function createId(){ return (crypto.randomUUID ? crypto.randomUUID() : Date.now()+"-"+Math.random().toString(36).slice(2)); }
 
   async function sendSignal(type,payload,to){
-    const body={room,from:role,to,type,payload,id:createId(),time:Date.now()};
+    if(!authDeviceId||!authToken)throw new Error("登録済みAndroid端末を選択してください。");
+    const body={room,deviceId:authDeviceId,authToken,from:role,to,type,payload,id:createId(),time:Date.now()};
     try{
       await fetch(gas(),{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body),cache:"no-store"});
     }catch(e){ log("GASへの送信に失敗しました。URLとデプロイ設定を確認してください。"); throw e; }
   }
   function pollUrl(){
-    const u=new URL(gas()); u.searchParams.set("action","poll");u.searchParams.set("room",room);u.searchParams.set("role",role);u.searchParams.set("callback","webrtcSignalCallback");u.searchParams.set("_",String(Date.now()));return u.toString();
+    const u=new URL(gas()); u.searchParams.set("action","poll");u.searchParams.set("room",room);u.searchParams.set("role",role);u.searchParams.set("deviceId",authDeviceId);u.searchParams.set("authToken",authToken);u.searchParams.set("callback","webrtcSignalCallback");u.searchParams.set("_",String(Date.now()));return u.toString();
   }
   function startPolling(){
     stopPolling(); window.webrtcSignalCallback=async(data)=>{
@@ -200,7 +213,7 @@
       const state=pc.connectionState;
       if(state==="connected"){
         clearReconnectTimer();reconnectAttempts=0;reconnecting=false;
-        setState("接続中","ok");connectedAt=connectedAt||Date.now();startStats();log("端末同士が接続されました。");
+        setState("接続中","ok");connectedAt=connectedAt||Date.now();recordDeviceConnection();startStats();log("端末同士が接続されました。");
       }else if(state==="connecting"){setState(reconnecting?"再接続中":"接続処理中","wait");}
       else if(state==="failed"){
         setState("再接続を準備中","wait");scheduleReconnect(0);
@@ -305,6 +318,7 @@
     return navigator.mediaDevices.getUserMedia(constraints);
   }
   async function startAndroid(){
+    if(!authDeviceId||!authToken)throw new Error("先に端末登録を行ってください。");
     if(!validGas()) throw new Error("先に正しいGAS WebアプリURL（/exec）を保存してください。");
     els.startHost.disabled=true; log("Androidのカメラ・マイクを起動しています…");
     cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:Number(els.resolutionSelect.value.split("x")[0])},height:{ideal:Number(els.resolutionSelect.value.split("x")[1])},frameRate:{ideal:Number(els.fpsSelect.value)}}});
@@ -316,6 +330,7 @@
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
   async function joinAndroid(){
+    if(!activeDevice||!authDeviceId||!authToken)throw new Error("先に登録済みAndroid端末を選択してください。");
     if(!validGas()) throw new Error("先に正しいGAS WebアプリURL（/exec）を保存してください。");
     room=els.joinCode.value.replace(/\D/g,""); if(!/^\d{6}$/.test(room)) throw new Error("6桁の接続コードを入力してください。");
     els.joinRoom.disabled=true;log("iPadのマイク使用許可を待っています…");
@@ -392,6 +407,31 @@
   }
 
   els.runDiagnostics.addEventListener("click",()=>{els.runDiagnostics.disabled=true;els.diagnosticResult.textContent="診断中…";runDiagnostics().catch(e=>{els.diagnosticResult.textContent="診断エラー: "+e.message;}).finally(()=>{els.runDiagnostics.disabled=false;});});
+  els.registerDevice.addEventListener("click",()=>registerPairedDevice().catch(error=>{els.deviceManagerStatus.textContent="端末登録に失敗しました: "+error.message;}).finally(()=>{els.registerDevice.disabled=false;}));
+  els.registeredDeviceSelect.addEventListener("change",()=>{
+    const selected=registeredDevices.find(d=>d.deviceId===els.registeredDeviceSelect.value)||null;
+    setActiveDevice(selected);
+    if(selected)els.deviceManagerStatus.textContent="選択中："+(selected.nickname||selected.label)+(selected.lastConnected?" / 最終接続："+new Date(selected.lastConnected).toLocaleString():" / 接続履歴なし");
+  });
+  els.renameDevice.addEventListener("click",()=>{
+    if(!activeDevice)return;
+    const name=prompt("端末の表示名を入力してください。",activeDevice.nickname||activeDevice.label);
+    if(name===null)return;
+    const clean=name.trim().slice(0,40);if(!clean){els.deviceManagerStatus.textContent="名前は1文字以上にしてください。";return;}
+    registeredDevices=registeredDevices.map(d=>d.deviceId===activeDevice.deviceId?{...d,nickname:clean}:d);
+    saveRegisteredDevices();renderRegisteredDevices();els.deviceManagerStatus.textContent="端末名を変更しました。";
+  });
+  els.favoriteDevice.addEventListener("click",()=>{
+    if(!activeDevice)return;
+    registeredDevices=registeredDevices.map(d=>d.deviceId===activeDevice.deviceId?{...d,favorite:!d.favorite}:d);
+    saveRegisteredDevices();renderRegisteredDevices();
+  });
+  els.removeDevice.addEventListener("click",()=>{
+    if(!activeDevice||!confirm("このiPadから登録情報を削除しますか？Android側の登録トークンは失効しません。"))return;
+    registeredDevices=registeredDevices.filter(d=>d.deviceId!==activeDevice.deviceId);
+    saveRegisteredDevices();authDeviceId="";authToken="";activeDevice=null;renderRegisteredDevices();
+    els.deviceManagerStatus.textContent="このiPadから登録情報を削除しました。Android側のトークンは別途再発行が必要です。";
+  });
   els.saveGas.addEventListener("click",()=>{
     if(!validGas()){els.gasStatus.textContent="URLを確認してください";log("GASの「ウェブアプリ URL」を使ってください。例：https://script.google.com/macros/s/.../exec（末尾は /exec）。URLの前後の空白や引用符は自動で除去します。");return;}
     const normalized = normalizeGasUrl();
@@ -400,6 +440,7 @@
     localStorage.setItem("webrtcGasUrl",normalized);els.gasStatus.textContent="保存済み ✓";log("GAS URLをこの端末に保存しました。");
   });
   els.gasUrl.value=localStorage.getItem("webrtcGasUrl")||"";if(els.gasUrl.value)els.gasStatus.textContent="保存済み";
+  renderRegisteredDevices();
   els.hostMode.addEventListener("click",()=>setRole("android"));els.viewerMode.addEventListener("click",()=>setRole("ipad"));
   els.startHost.addEventListener("click",()=>startAndroid().catch(e=>{console.error(e);log(e.message);els.startHost.disabled=false;}));
   els.joinRoom.addEventListener("click",()=>joinAndroid().catch(e=>{console.error(e);log(e.message);els.joinRoom.disabled=false;}));
