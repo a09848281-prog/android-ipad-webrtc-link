@@ -7,7 +7,7 @@
 1. GitHubの `gas/Code.gs` 全体を既存GASプロジェクトへ貼り付けて保存します。
 2. GASを「新バージョン」で再デプロイします。既存の `/exec` URLを維持してください。
 3. Androidアプリを起動し、GAS URLを設定します。
-4. Androidで「位置情報の許可を設定」を必要な場合に設定します。WebRTC開始前に許可しておくと、location型Foreground Serviceを有効にできます。
+4. Androidで「位置情報の許可を設定」を必要な場合に設定します。WebRTC開始前に許可しておいてください。位置情報用Foreground ServiceタイプやACCESS_BACKGROUND_LOCATIONは使用しません。
 5. Androidで「iPadとペアリング」を押し、8桁コードを発行します。
 6. iPadのPWAで同じGAS URLを保存し、8桁コードを入力して端末登録します。
 7. Androidで「WebRTCを開始」を押します。iPadの端末一覧でオンライン状態・電池・通信方式・接続コードを確認し、「Androidに接続」を押します。
@@ -28,7 +28,7 @@
 - [ ] iPadの接続前診断でGAS・WebRTC・STUN状態が表示される
 - [ ] iPadで「位置情報を見る」を押したときだけAndroidの位置情報が1回返る
 - [ ] 位置情報の許可拒否・位置サービスOFF・タイムアウト時にエラー表示される
-- [ ] 位置情報結果を受信後、GASのone-shotメッセージがポーリング時に消費される
+- [ ] 位置情報結果を受信後、GASのone-shotメッセージが専用一時キュー（最大30秒）に入り、認証済み相手の最初のポーリング時に削除される
 - [ ] iPadの切断ボタンとAndroid通知の停止操作で双方が終了する
 - [ ] Android画面ロック中に通知が維持され、通信が継続する
 - [ ] Androidプロセス再起動後にForeground Serviceが状態を復元できる（OSが再起動を許可する場合）
