@@ -42,6 +42,10 @@ jobs:
           gradle-version: "8.9"
       - name: Check PWA JavaScript syntax
         run: node --check app.js
+      - name: Check GAS JavaScript syntax
+        run: node --check < gas/Code.gs
+      - name: Validate Android manifest XML
+        run: python -c "import xml.etree.ElementTree as ET; ET.parse('android-native/app/src/main/AndroidManifest.xml')"
       - name: Assemble debug APK
         working-directory: android-native
         run: gradle --no-daemon :app:assembleDebug
