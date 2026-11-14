@@ -11,7 +11,7 @@
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
-  let started = false, polling = false;
+  let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0;
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -82,12 +82,32 @@
       }else if(m.type==="candidate" && m.payload){ await addRemoteCandidate(m.payload); }
     }catch(e){ console.error(e); log("接続情報の処理に失敗しました: "+e.message); }
   }
-  function setupPeer(){
+
+  function startStats(){
+    if(statsTimer) clearInterval(statsTimer);
+    statsTimer=setInterval(async()=>{
+      if(!pc || pc.connectionState!=="connected") return;
+      const now=Date.now(), duration=document.getElementById("duration");
+      if(connectedAt){const s=Math.floor((now-connectedAt)/1000);duration.textContent=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
+      try{
+        const report=await pc.getStats();let rtt=null,bytes=null,lost=0,received=0;
+        report.forEach(v=>{
+          if(v.type==="candidate-pair"&&v.state==="succeeded"&&v.currentRoundTripTime!=null)rtt=v.currentRoundTripTime*1000;
+          if(v.type==="inbound-rtp"&&!v.isRemote){if(v.bytesReceived!=null)bytes=(bytes||0)+v.bytesReceived;lost+=v.packetsLost||0;received+=v.packetsReceived||0;}
+        });
+        document.getElementById("rtt").textContent=rtt==null?"—":Math.round(rtt)+" ms";
+        document.getElementById("packetLoss").textContent=(lost+received)?(100*lost/(lost+received)).toFixed(1)+"%":"—";
+        if(bytes!=null&&previousBytes!=null&&previousAt)document.getElementById("bitrate").textContent=Math.max(0,(bytes-previousBytes)*8/((now-previousAt)/1000)/1000).toFixed(0)+" kbps";
+        if(bytes!=null){previousBytes=bytes;previousAt=now;}
+      }catch(_){}
+    },2000);
+  }
+\n  function setupPeer(){
     pc=peerConfig();
     pc.onicecandidate=(event)=>{if(event.candidate) sendSignal("candidate",event.candidate.toJSON(),role==="android"?"ipad":"android").catch(()=>{});};
     pc.onconnectionstatechange=()=>{
       const s=pc.connectionState;
-      if(s==="connected"){setState("接続中","ok");log("端末同士が接続されました。");}
+      if(s==="connected"){setState("接続中","ok");connectedAt=connectedAt||Date.now();startStats();log("端末同士が接続されました。");}
       else if(s==="connecting"){setState("接続処理中","wait");}
       else if(s==="failed"){setState("接続失敗");log("P2P接続に失敗しました。別のWi-Fiやモバイル回線ではTURNサーバーが必要になる場合があります。");}
       else if(s==="disconnected"){setState("切断");}
@@ -127,7 +147,7 @@
     log("Android側からの接続情報を待っています…");
   }
   async function stop(){
-    started=false;stopPolling();
+    started=false;stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
     if(pc){pc.ontrack=null;pc.onicecandidate=null;pc.close();pc=null;}
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
