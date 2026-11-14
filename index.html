@@ -42,7 +42,7 @@
   <div class="connection-banner" id="devicePresence">Android端末：状態を確認しています</div>
   <section class="video-stage">
     <div class="video-wrap"><video id="remoteVideo" autoplay playsinline></video><div id="videoPlaceholder" class="placeholder"><div class="placeholder-icon">◉</div><b>映像を待っています</b><small>左側から端末を選び「この端末に接続」を押してください</small></div></div>
-    <div class="video-toolbar"><div><strong>Android カメラ</strong><span id="mediaState">映像・音声：未受信</span></div><button id="cameraSwitch" class="btn subtle" disabled>⇄ カメラを切り替え</button></div>
+    <div class="video-toolbar"><div><strong>Android カメラ</strong><span id="mediaState">映像・音声：未受信</span></div><div class="call-controls"><button id="pttButton" class="btn ptt-button" disabled>🎙️ 押している間だけ話す</button><button id="cameraSwitch" class="btn subtle" disabled>⇄ カメラを切り替え</button></div></div>
   </section>
   <section class="connection-details"><div class="detail-card"><span>接続時間</span><strong id="duration">--:--</strong></div><div class="detail-card"><span>応答時間</span><strong id="rtt">—</strong></div><div class="detail-card"><span>受信速度</span><strong id="bitrate">—</strong></div><div class="detail-card"><span>パケット損失</span><strong id="packetLoss">—</strong></div></section>
   <div class="bottom-actions"><button id="disconnect" class="btn danger" disabled>通話を終了</button><p id="log" role="status" aria-live="polite">接続サーバーURLを設定し、Android端末を登録してください。</p></div>
