@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var roomCodeView: TextView
     private var microphoneEnabled = true
     private var cameraEnabled = true
+    private var webRtcStarted = false
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -151,6 +152,7 @@ class MainActivity : ComponentActivity() {
             text = "サービスを停止"
             setOnClickListener {
                 stopService(Intent(this@MainActivity, WebRtcForegroundService::class.java))
+                webRtcStarted = false
                 status.text = "サービスを停止しました。"
                 roomCodeView.text = "接続コード：------"
             }
@@ -180,6 +182,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendMediaAction(action: String, extraKey: String? = null, enabled: Boolean = true) {
+        if (!webRtcStarted) { status.text = "先に② WebRTCを開始してください。"; return }
         val intent = Intent(this, WebRtcForegroundService::class.java).setAction(action)
         if (extraKey != null) intent.putExtra(extraKey, enabled)
         try {
@@ -190,6 +193,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setCameraProfile(width: Int, height: Int, fps: Int) {
+        if (!webRtcStarted) { status.text = "先に② WebRTCを開始してください。"; return }
         val intent = Intent(this, WebRtcForegroundService::class.java)
             .setAction(WebRtcForegroundService.ACTION_SET_CAMERA_PROFILE)
             .putExtra(WebRtcForegroundService.EXTRA_WIDTH, width)
@@ -204,6 +208,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startServiceOnly() {
+        webRtcStarted = false
         try {
             val intent = Intent(this, WebRtcForegroundService::class.java)
                 .setAction(WebRtcForegroundService.ACTION_DIAGNOSTIC_ONLY)
@@ -245,6 +250,7 @@ class MainActivity : ComponentActivity() {
             .putExtra(WebRtcForegroundService.EXTRA_ROOM, room)
         try {
             ContextCompat.startForegroundService(this, intent)
+            webRtcStarted = true
             roomCodeView.text = "接続コード：$room"
             status.text = "RTC診断を開始しました。番号表示は初期化成功を意味しません。通知の最後のRTC段階を確認してください。"
         } catch (error: Exception) {
