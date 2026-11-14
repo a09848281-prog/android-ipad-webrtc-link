@@ -11,7 +11,7 @@ function doGet(e) {
   if (p.action === "poll") return pollMessages_(p);
   if (p.action === "health") return jsonpOutput_({ ok: true, service: "WebRTC Link Signaling", version: "0.3" }, p.callback);
   if (p.action === "pair_complete") return pairComplete_(p);
-  return output_({ ok: true, service: "WebRTC Link Signaling", version: "0.2" });
+  return output_({ ok: true, service: "WebRTC Link Signaling", version: "0.3" });
 }
 
 function doPost(e) {
@@ -103,7 +103,7 @@ function pairStart_(m) {
   const authToken = String(m.authToken || "");
   const label = String(m.label || "Android端末").slice(0, 80);
   if (!/^[A-Za-z0-9_-]{16,80}$/.test(deviceId) ||
-      !/^\\d{8}$/.test(pairCode) ||
+      !/^\d{8}$/.test(pairCode) ||
       !/^[A-Za-z0-9_-]{40,100}$/.test(authToken)) {
     return output_({ ok: false, error: "invalid_pair_request" });
   }
@@ -123,7 +123,7 @@ function pairStart_(m) {
 function pairComplete_(p) {
   const callback = String(p.callback || "");
   const pairCode = String(p.code || "");
-  if (!/^\\d{8}$/.test(pairCode)) return jsonpOutput_({ ok: false, error: "invalid_pair_code" }, callback);
+  if (!/^\d{8}$/.test(pairCode)) return jsonpOutput_({ ok: false, error: "invalid_pair_code" }, callback);
   const lock = LockService.getScriptLock();
   lock.waitLock(8000);
   try {
