@@ -3,79 +3,87 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101827">
+  <meta name="theme-color" content="#080e19">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="description" content="AndroidとiPadをWebRTCで直接つなぐ個人用通信ツール">
-  <title>Android ⇄ iPad WebRTC Link</title>
+  <title>WebRTC Link</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <main class="app">
-    <header class="header">
-      <div class="logo">🔗</div>
-      <div><h1>WebRTC Link</h1><p>Android ⇄ iPad P2P通信</p></div>
-      <span class="tag">試作版 0.1</span>
+<main class="workspace">
+  <aside class="sidebar">
+    <header class="brand">
+      <div class="brand-mark">W</div>
+      <div><strong>WebRTC Link</strong><small>ANDROID ⇄ iPAD P2P</small></div>
     </header>
 
-    <section class="panel">
-      <h2>① 接続設定</h2>
-      <label for="gasUrl">GAS WebアプリURL（/exec）</label>
+    <section class="side-section">
+      <div class="side-heading">接続設定</div>
+      <label for="gasUrl">GAS Webアプリ URL</label>
       <input id="gasUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="url">
-      <p class="hint">同じGAS URLをAndroidとiPadの両方に設定してください。</p>
-      <div class="actions">
-        <button id="saveGas" class="secondary">URLを保存</button>
-        <span id="gasStatus" class="small-status">未設定</span>
+      <div class="inline-row">
+        <button id="saveGas" class="btn subtle" type="button">URLを保存</button>
+        <span id="gasStatus" class="muted">未設定</span>
       </div>
+      <p class="muted">AndroidとiPadの両方に同じGAS URLを設定してください。</p>
     </section>
 
-    <section class="panel">
-      <h2>② 端末を選択</h2>
+    <section class="side-section">
+      <div class="side-heading">端末モード</div>
       <div class="role-grid">
-        <button id="hostMode" class="role active" type="button"><span>📱</span><b>Android側</b><small>カメラ・マイクを送信</small></button>
+        <button id="hostMode" class="role active" type="button"><span>📱</span><b>Android側</b><small>映像・音声を送信</small></button>
         <button id="viewerMode" class="role" type="button"><span>🍎</span><b>iPad側</b><small>映像受信・PTT送信</small></button>
       </div>
 
       <div id="hostPanel" class="role-panel">
-        <button id="startHost" class="primary full">カメラ・マイクを開始して接続待機</button>
-        <div class="code-box"><small>接続コード</small><strong id="roomCode">------</strong><button id="copyCode" class="tiny" disabled>コピー</button></div>
-        <p class="hint">表示された6桁コードをiPad側に入力してください。</p>
+        <button id="startHost" class="btn primary wide" type="button">カメラ・マイクを開始して待機</button>
+        <div class="code-box"><small>接続コード</small><strong id="roomCode">------</strong><button id="copyCode" class="btn subtle tiny" type="button" disabled>コピー</button></div>
+        <p class="muted">表示された6桁コードをiPad側に入力してください。</p>
       </div>
 
       <div id="viewerPanel" class="role-panel hidden">
-        <label for="joinCode">Android側に表示された6桁コード</label>
-        <input id="joinCode" type="text" inputmode="numeric" maxlength="6" placeholder="例：123456">
-        <button id="joinRoom" class="primary full">接続する</button>
-        <p class="hint">iPadのマイク使用許可が表示されたら許可してください。</p>
+        <label for="joinCode">Android側の6桁コード</label>
+        <input id="joinCode" type="text" inputmode="numeric" maxlength="6" placeholder="例：123456" autocomplete="one-time-code">
+        <button id="joinRoom" class="btn primary wide" type="button">接続する</button>
+        <p class="muted">マイクの使用許可が表示されたら許可してください。</p>
       </div>
     </section>
 
-    <section class="panel">
-      <div class="section-title"><h2>③ 通信画面</h2><span id="connectionState" class="state">未接続</span></div>
+    <div class="sidebar-footer"><span class="secure-dot"></span> WebRTC P2P通信 · GASは接続情報の交換のみ</div>
+  </aside>
+
+  <section class="main-panel">
+    <header class="topbar">
+      <div><span class="eyebrow">LIVE CONNECTION</span><h1>デバイス通話</h1><p>AndroidとiPadを直接つなぎます。</p></div>
+      <div id="connectionState" class="state">未接続</div>
+    </header>
+
+    <section class="video-stage">
       <div class="video-wrap">
-        <video id="remoteVideo" autoplay playsinline controls></video>
-        <div id="videoPlaceholder" class="placeholder"><span>📡</span><b>映像待機中</b><small>接続するとAndroid側の映像が表示されます</small></div>
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div id="videoPlaceholder" class="placeholder">
+          <div class="placeholder-icon">◉</div>
+          <b>映像を待っています</b>
+          <small>接続すると相手側の映像がここに表示されます。</small>
+        </div>
       </div>
-      <div class="video-labels"><span>相手側の映像</span><span id="mediaState">映像・音声：未受信</span></div>
-      <div class="ptt-area">
-        <button id="pttButton" class="ptt" disabled>🎙️ 押している間だけ話す</button>
-        <p class="hint">iPad側で接続後に使用できます。ボタンを離すとマイクがミュートになります。</p>
-      </div>
-      <div class="local-preview">
-        <video id="localVideo" autoplay playsinline muted></video>
-        <span>この端末のカメラ（Android側のみ）</span>
+      <div class="video-toolbar">
+        <div><strong>相手側の映像</strong><span id="mediaState">映像・音声：未受信</span></div>
+        <button id="pttButton" class="btn ptt-button" type="button" disabled>🎙️ 押している間だけ話す</button>
       </div>
     </section>
 
-    <section class="panel">
-      <h2>④ 操作</h2>
-      <button id="disconnect" class="danger full" disabled>切断する</button>
-      <p id="log" class="log" role="status" aria-live="polite">GAS URLを設定してください。</p>
-    </section>
+    <div class="bottom-actions">
+      <button id="disconnect" class="btn danger" type="button" disabled>通話を終了</button>
+      <p id="log" role="status" aria-live="polite">GAS URLを設定してください。</p>
+    </div>
+    <footer class="main-footer">WebRTC Link · Android ⇄ iPad</footer>
+  </section>
 
-    <footer>映像・音声はWebRTCで端末間を直接通信します。GASは接続情報の交換だけに使用します。</footer>
-  </main>
-  <script src="./app.js" defer></script>
+  <video id="localVideo" autoplay playsinline muted hidden></video>
+</main>
+<script src="./app.js" defer></script>
 </body>
 </html>
