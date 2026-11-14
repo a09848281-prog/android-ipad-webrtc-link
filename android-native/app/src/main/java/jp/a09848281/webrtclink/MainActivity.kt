@@ -194,6 +194,11 @@ class MainActivity : ComponentActivity() {
             addView(rtcStart)
             addView(locationPermission)
             addView(mediaControls)
+            addView(TextView(this@MainActivity).apply {
+                text = "🔋 バックグラウンド安定化：設定 → アプリ → WebRTC Link → バッテリー → 制限なし（端末により表示名が異なります）。省電力設定・OSの終了処理により通信継続は保証されません。"
+                textSize = 12f
+                setPadding(8, 12, 8, 12)
+            })
             addView(stop)
             addView(status)
         })
