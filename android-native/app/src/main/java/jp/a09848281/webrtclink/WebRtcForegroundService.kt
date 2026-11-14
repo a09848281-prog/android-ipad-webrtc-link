@@ -67,15 +67,18 @@ class WebRtcForegroundService : Service() {
 
         val gasUrl = intent.getStringExtra(EXTRA_GAS_URL).orEmpty()
         val room = intent.getStringExtra(EXTRA_ROOM).orEmpty()
+        val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID).orEmpty()
+        val authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN).orEmpty()
         if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
-            !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}"))) {
+            !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}")) ||
+            !deviceId.matches(Regex("[A-Za-z0-9_-]{16,80}")) || !authToken.matches(Regex("[A-Za-z0-9_-]{40,100}"))) {
             updateNotification("設定エラー：GAS URLまたは接続コード")
             stopSelf()
             return START_NOT_STICKY
         }
 
         webRtcSession?.close()
-        webRtcSession = WebRtcSession(applicationContext, gasUrl, room) { message ->
+        webRtcSession = WebRtcSession(applicationContext, gasUrl, room, deviceId, authToken) { message ->
             updateNotification(message)
             if (message == "相手側が切断しました。") stopSelf()
         }.also { it.start() }
@@ -159,6 +162,8 @@ class WebRtcForegroundService : Service() {
         const val EXTRA_FPS = "fps"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_ROOM = "room_code"
+        const val EXTRA_DEVICE_ID = "device_id"
+        const val EXTRA_AUTH_TOKEN = "auth_token"
         private const val CHANNEL_ID = "webrtc_session"
         private const val NOTIFICATION_ID = 4102
     }
