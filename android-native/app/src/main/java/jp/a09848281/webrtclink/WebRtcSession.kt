@@ -34,6 +34,8 @@ class WebRtcSession(
     private val context: Context,
     private val gasUrl: String,
     private val room: String,
+    private val deviceId: String,
+    private val authToken: String,
     private val onStatus: (String) -> Unit
 ) {
     private val closed = AtomicBoolean(false)
@@ -314,7 +316,7 @@ class WebRtcSession(
             if (closed.get() || pollRunning) return@scheduleWithFixedDelay
             pollRunning = true
             try {
-                val url = URL("$gasUrl?action=poll&room=$room&role=android&_=${System.currentTimeMillis()}")
+                val url = URL("$gasUrl?action=poll&room=$room&role=android&deviceId=$deviceId&authToken=$authToken&_=${System.currentTimeMillis()}")
                 val connection = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"; connectTimeout = 10000; readTimeout = 10000
                     setRequestProperty("Cache-Control", "no-cache")
@@ -461,7 +463,8 @@ class WebRtcSession(
             if (closed.get()) return@execute
             var connection: HttpURLConnection? = null
             try {
-                val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
+                val message = JSONObject().put("room", room).put("deviceId", deviceId).put("authToken", authToken)
+                    .put("from", "android").put("to", "ipad")
                     .put("type", type).put("payload", payload)
                     .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
                 connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
@@ -485,7 +488,8 @@ class WebRtcSession(
         if (closed.get()) { onComplete(); return }
         sender.execute {
             try {
-                val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
+                val message = JSONObject().put("room", room).put("deviceId", deviceId).put("authToken", authToken)
+                    .put("from", "android").put("to", "ipad")
                     .put("type", "hangup").put("payload", JSONObject().put("reason", "android-user-disconnect"))
                     .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
                 val connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
