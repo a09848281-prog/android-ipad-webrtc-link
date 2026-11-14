@@ -6,13 +6,13 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
-  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high",locationTimeout=null;
+  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high",locationTimeout=null,deviceStatusTimer=null;
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -73,6 +73,20 @@
   async function handleSignal(m){
     if(m.room!==room || m.to!==role) return;
     try{
+      if(m.type==="device_status" && role==="ipad"){
+        const p=m.payload||{};
+        const battery=Number.isFinite(Number(p.batteryPercent))?Math.round(Number(p.batteryPercent))+"%":"不明";
+        const label=String(p.deviceLabel||"Android端末").slice(0,60);
+        const network=String(p.networkType||"不明").slice(0,30);
+        els.devicePresence.textContent="🟢 "+label+"：オンライン / 電池 "+battery+" / "+network;
+        els.devicePresence.classList.add("online");
+        if(deviceStatusTimer)clearTimeout(deviceStatusTimer);
+        deviceStatusTimer=setTimeout(()=>{
+          els.devicePresence.textContent="⚪ Android端末：オフラインまたは応答なし";
+          els.devicePresence.classList.remove("online");
+        },50000);
+        return;
+      }
       if(m.type==="location_result" && role==="ipad"){
         if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}
         const p=m.payload||{};
@@ -260,7 +274,7 @@
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.devicePresence.textContent="🟡 Android端末の状態を確認中…";els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(options={}){
@@ -272,7 +286,7 @@
       try{await sendSignal("hangup",{reason:"user-disconnect"},role==="android"?"ipad":"android");}
       catch(_){log("切断通知を送信できませんでした。ローカル側の終了処理を続行します。");}
     }
-    started=false;if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}els.requestLocation.disabled=true;els.locationResult.textContent="";els.locationResult.classList.add("hidden");els.locationStatus.textContent="接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。";stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
+    started=false;if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}if(deviceStatusTimer){clearTimeout(deviceStatusTimer);deviceStatusTimer=null;}els.devicePresence.textContent="📱 Android端末：状態不明";els.devicePresence.classList.remove("online");els.requestLocation.disabled=true;els.locationResult.textContent="";els.locationResult.classList.add("hidden");els.locationStatus.textContent="接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。";stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
     if(pc){pc.ontrack=null;pc.onicecandidate=null;pc.onconnectionstatechange=null;pc.close();pc=null;}
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
