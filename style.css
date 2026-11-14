@@ -30,3 +30,5 @@ button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:12px 15px
 
 .device-presence{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#0d1727;color:var(--muted);font-size:13px}
 .device-presence.online{border-color:#278d6d;color:#8be3bf}
+
+#diagnosticResult{white-space:pre-line;line-height:1.8;padding:10px;border-radius:8px;background:#0d1727}
