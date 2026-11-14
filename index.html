@@ -52,6 +52,12 @@
     </section>
 
     <section class="panel">
+      <h2>🔎 接続前チェック</h2>
+      <button id="runDiagnostics" class="secondary full" type="button">通信・WebRTCを診断</button>
+      <p id="diagnosticResult" class="hint" role="status">接続前にブラウザ、GAS、STUN通信を確認できます。カメラ・マイクは起動しません。</p>
+    </section>
+
+    <section class="panel">
       <div class="section-title"><h2>③ 通信画面</h2><span id="connectionState" class="state">未接続</span></div>
       <div id="devicePresence" class="device-presence" role="status">📱 Android端末：状態不明</div>
       <div class="video-wrap">
