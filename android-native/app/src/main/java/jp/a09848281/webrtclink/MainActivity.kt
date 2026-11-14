@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
         val stop = Button(this).apply {
             text = "サービスを停止"
             setOnClickListener {
-                stopService(Intent(this@MainActivity, WebRtcForegroundService::class.java))
+                startService(Intent(this@MainActivity, WebRtcForegroundService::class.java).setAction(WebRtcForegroundService.ACTION_STOP))
                 status.text = "サービスを停止しました。"
                 roomCodeView.text = "接続コード：------"
             }
@@ -85,6 +85,14 @@ class MainActivity : ComponentActivity() {
             addView(stop)
             addView(status)
         })
+        val servicePrefs = getSharedPreferences("webrtc_service_state", MODE_PRIVATE)
+        val activeRoom = servicePrefs.getString("room", "").orEmpty()
+        if (servicePrefs.getBoolean("active", false) && activeRoom.matches(Regex("\\d{6}"))) {
+            roomCodeView.text = "接続コード：$activeRoom"
+            rtcStart.text = "● 通話待機中（再起動しない）"
+            rtcStart.isEnabled = false
+            status.text = "既存の通話サービスを維持しています。この画面を開いても通信は再起動しません。"
+        }
     }
 
     private fun startServiceOnly() {

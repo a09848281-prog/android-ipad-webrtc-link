@@ -1,0 +1,31 @@
+name: PWA JavaScript syntax check
+
+on:
+  push:
+    branches:
+      - feature/stable-lock-camera-reconnect-v1
+  pull_request:
+    branches:
+      - feature/ptt-location-session-v5
+    paths:
+      - 'app.js'
+      - 'index.html'
+      - 'style.css'
+      - 'sw.js'
+      - '.github/workflows/android-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check-pwa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check PWA JavaScript syntax
+        run: node --check app.js

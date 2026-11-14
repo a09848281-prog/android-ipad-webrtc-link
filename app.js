@@ -6,12 +6,12 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log")
+    ptt:$("pttButton"),cameraSwitch:$("cameraSwitch"),disconnect:$("disconnect"),log:$("log")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
-  let started = false, polling = false;
+  let started = false, polling = false, cameraSwitchTimer = null;
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -80,6 +80,12 @@
         if(pc.signalingState!=="have-local-offer") return;
         await pc.setRemoteDescription(new RTCSessionDescription(m.payload)); await flushCandidates(); log("応答を受信しました。接続処理中です…");
       }else if(m.type==="candidate" && m.payload){ await addRemoteCandidate(m.payload); }
+      else if(m.type==="camera_switch_result"){
+        if(cameraSwitchTimer){clearTimeout(cameraSwitchTimer);cameraSwitchTimer=null;}
+        els.cameraSwitch.disabled=false;
+        if(m.payload && m.payload.ok) log(m.payload.facing==="user"?"Androidを前面カメラに切り替えました。":"Androidを背面カメラに切り替えました。");
+        else log("Androidのカメラ切り替えに失敗しました: "+((m.payload&&m.payload.error)||"理由不明"));
+      }
     }catch(e){ console.error(e); log("接続情報の処理に失敗しました: "+e.message); }
   }
   function setupPeer(){
@@ -87,10 +93,10 @@
     pc.onicecandidate=(event)=>{if(event.candidate) sendSignal("candidate",event.candidate.toJSON(),role==="android"?"ipad":"android").catch(()=>{});};
     pc.onconnectionstatechange=()=>{
       const s=pc.connectionState;
-      if(s==="connected"){setState("接続中","ok");log("端末同士が接続されました。");}
+      if(s==="connected"){setState("接続中","ok");els.cameraSwitch.disabled=role!=="ipad";log("端末同士が接続されました。");}
       else if(s==="connecting"){setState("接続処理中","wait");}
-      else if(s==="failed"){setState("接続失敗");log("P2P接続に失敗しました。別のWi-Fiやモバイル回線ではTURNサーバーが必要になる場合があります。");}
-      else if(s==="disconnected"){setState("切断");}
+      else if(s==="failed"){setState("再接続待ち","wait");els.cameraSwitch.disabled=true;log("通信が切れました。Android側の自動再接続を待っています…");}
+      else if(s==="disconnected"){setState("再接続中","wait");els.cameraSwitch.disabled=true;log("通信が一時切断されました。自動再接続を試しています…");}
       else if(s==="closed"){setState("未接続");}
     };
     pc.ontrack=(event)=>{
@@ -132,7 +138,7 @@
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
-    els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.ptt.classList.remove("active");els.disconnect.disabled=true;
+    els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.cameraSwitch.disabled=true;if(cameraSwitchTimer){clearTimeout(cameraSwitchTimer);cameraSwitchTimer=null;}els.ptt.classList.remove("active");els.disconnect.disabled=true;
     els.startHost.disabled=false;els.joinRoom.disabled=false;els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log("切断しました。");
   }
@@ -152,6 +158,18 @@
   els.joinRoom.addEventListener("click",()=>joinAndroid().catch(e=>{console.error(e);log(e.message);els.joinRoom.disabled=false;}));
   els.copyCode.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(room);log("接続コードをコピーしました。");}catch(_){log("コードを長押ししてコピーしてください。");}});
   els.disconnect.addEventListener("click",stop);
+  els.cameraSwitch.addEventListener("click",async()=>{
+    if(role!=="ipad"||!started||!pc||pc.connectionState!=="connected"){log("Androidと接続してからカメラを切り替えられます。");return;}
+    els.cameraSwitch.disabled=true;
+    log("Androidへカメラ切り替えを要求しています…");
+    try{
+      await sendSignal("camera_switch",{requestedAt:Date.now()},"android");
+      cameraSwitchTimer=setTimeout(()=>{
+        cameraSwitchTimer=null;els.cameraSwitch.disabled=false;
+        log("Androidから切り替え結果が届きません。接続状態を確認してください。");
+      },12000);
+    }catch(error){els.cameraSwitch.disabled=false;log("カメラ切り替え要求に失敗しました: "+error.message);}
+  });
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
