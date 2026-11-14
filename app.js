@@ -6,7 +6,7 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),deviceManagerStatus:$("deviceManagerStatus"),registeredDeviceStatus:$("registeredDeviceStatus"),refreshDeviceStatus:$("refreshDeviceStatus"),connectRegisteredDevice:$("connectRegisteredDevice")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),viewDeviceHistory:$("viewDeviceHistory"),deviceManagerStatus:$("deviceManagerStatus"),registeredDeviceStatus:$("registeredDeviceStatus"),refreshDeviceStatus:$("refreshDeviceStatus"),connectRegisteredDevice:$("connectRegisteredDevice")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
@@ -41,7 +41,7 @@
   }
   function updateDeviceActions(){
     const enabled=!!activeDevice;
-    [els.renameDevice,els.favoriteDevice,els.removeDevice,els.refreshDeviceStatus].forEach(button=>{if(button)button.disabled=!enabled;});
+    [els.renameDevice,els.favoriteDevice,els.removeDevice,els.viewDeviceHistory,els.refreshDeviceStatus].forEach(button=>{if(button)button.disabled=!enabled;});
     if(els.connectRegisteredDevice)els.connectRegisteredDevice.disabled=!(enabled&&activePresence&&activePresence.online&&activePresence.room);
     if(els.favoriteDevice)els.favoriteDevice.textContent=activeDevice&&activeDevice.favorite?"★ お気に入り解除":"☆ お気に入り";
   }
@@ -472,6 +472,12 @@
     if(!activeDevice)return;
     registeredDevices=registeredDevices.map(d=>d.deviceId===activeDevice.deviceId?{...d,favorite:!d.favorite}:d);
     saveRegisteredDevices();renderRegisteredDevices();
+  });
+  els.viewDeviceHistory.addEventListener("click",()=>{
+    if(!activeDevice)return;
+    const history=Array.isArray(activeDevice.history)?activeDevice.history:[];
+    const lines=history.slice(0,20).map((item,index)=>(index+1)+". "+new Date(item.time).toLocaleString());
+    alert(lines.length?"接続履歴（最新20件）\\n"+lines.join("\\n"):"この端末の接続履歴はありません。");
   });
   els.removeDevice.addEventListener("click",async()=>{
     if(!activeDevice||!confirm("このAndroid端末の登録を解除しますか？このiPad以外に保存された同じ登録情報も無効になります。"))return;
