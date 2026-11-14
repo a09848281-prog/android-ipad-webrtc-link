@@ -400,7 +400,7 @@
   function pttDown(e){if(role!=="ipad"||!pttTrack||!started)return;e.preventDefault();pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 送信中…（離すとミュート）";}
   function pttUp(){if(pttTrack){pttTrack.enabled=false;els.ptt.classList.remove("active");els.ptt.textContent="🎙️ 押している間だけ話す";}}
 
-  async function runDiagnostics(){
+  async async function runDiagnostics(){
     const lines=[];
     const ok=(v)=>v?"OK":"NG";
     lines.push("HTTPS/安全な接続: "+ok(window.isSecureContext));
