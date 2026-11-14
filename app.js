@@ -252,7 +252,7 @@
       const state=pc.connectionState;
       if(state==="connected"){
         clearReconnectTimer();reconnectAttempts=0;reconnecting=false;
-        setState("接続中","ok");connectedAt=connectedAt||Date.now();recordDeviceConnection();startStats();log("端末同士が接続されました。");
+        setState("接続中","ok");if(role==="ipad")els.cameraSwitch.disabled=false;connectedAt=connectedAt||Date.now();recordDeviceConnection();startStats();log("端末同士が接続されました。");
       }else if(state==="connecting"){setState(reconnecting?"再接続中":"接続処理中","wait");}
       else if(state==="failed"){
         setState("再接続を準備中","wait");scheduleReconnect(0);
