@@ -6,7 +6,7 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
@@ -117,7 +117,7 @@
     pc.ontrack=(event)=>{
       let stream=event.streams && event.streams[0];
       if(!stream){stream=new MediaStream([event.track]);}
-      els.remoteVideo.srcObject=stream; els.placeholder.classList.add("hidden");
+      els.remoteVideo.srcObject=stream; els.remoteVideo.volume=Number(els.remoteVolume.value);els.remoteVolume.disabled=false; els.placeholder.classList.add("hidden");
       els.mediaState.textContent="映像・音声を受信中";
       els.remoteVideo.play().catch(()=>{log("映像は受信しています。画面をタップして再生してください。");});
     };
@@ -133,7 +133,7 @@
     localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}});
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
-    started=true; els.disconnect.disabled=false; setState("接続待機中","wait");startPolling();
+    started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
@@ -144,7 +144,7 @@
     localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
-    started=true;els.disconnect.disabled=false;els.ptt.disabled=false;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(){
@@ -153,7 +153,7 @@
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
-    els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.ptt.classList.remove("active");els.disconnect.disabled=true;
+    els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
     els.startHost.disabled=false;els.joinRoom.disabled=false;els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log("切断しました。");
   }
@@ -173,6 +173,21 @@
   els.joinRoom.addEventListener("click",()=>joinAndroid().catch(e=>{console.error(e);log(e.message);els.joinRoom.disabled=false;}));
   els.copyCode.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(room);log("接続コードをコピーしました。");}catch(_){log("コードを長押ししてコピーしてください。");}});
   els.disconnect.addEventListener("click",stop);
+  els.micToggle.addEventListener("click",()=>{
+    const tracks=localStream?localStream.getAudioTracks():[];
+    if(!tracks.length){log("この端末のマイクトラックがありません。");return;}
+    const enabled=!tracks[0].enabled;
+    tracks.forEach(track=>track.enabled=enabled);
+    els.micToggle.textContent=enabled?"🎙️ マイクをミュート":"🔇 マイクのミュート解除";
+  });
+  els.videoToggle.addEventListener("click",()=>{
+    const tracks=localStream?localStream.getVideoTracks():[];
+    if(!tracks.length){log("この端末のカメラ映像はありません。");return;}
+    const enabled=!tracks[0].enabled;
+    tracks.forEach(track=>track.enabled=enabled);
+    els.videoToggle.textContent=enabled?"📷 映像を停止":"▶️ 映像を再開";
+  });
+  els.remoteVolume.addEventListener("input",()=>{els.remoteVideo.volume=Number(els.remoteVolume.value);});
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
