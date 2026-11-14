@@ -73,8 +73,22 @@ function pollMessages_(p) {
     return jsonpOutput_({ ok: false, error: "unauthorized", messages: [] }, callback);
   }
   const cache = CacheService.getScriptCache();
-  const messages = JSON.parse(cache.get(queueKey_(room, role)) || "[]")
-    .filter(function(message) { return message.deviceId === deviceId; });
+  const queueKey = queueKey_(room, role);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(8000);
+  let messages = [];
+  try {
+    const all = JSON.parse(cache.get(queueKey) || "[]");
+    messages = all.filter(function(message) { return message.deviceId === deviceId; });
+    // Location request/results are one-shot commands/data, never retained as history.
+    const retained = all.filter(function(message) {
+      return !/^(location_request|location_result|location_denied|location_error)$/.test(message.type);
+    });
+    if (retained.length) cache.put(queueKey, JSON.stringify(retained), ROOM_TTL_SECONDS);
+    else cache.remove(queueKey);
+  } finally {
+    lock.releaseLock();
+  }
   const result = { ok: true, messages: messages };
   if (/^[A-Za-z_$][0-9A-Za-z_$]{0,60}$/.test(callback)) {
     return ContentService.createTextOutput(callback + "(" + JSON.stringify(result) + ");")
