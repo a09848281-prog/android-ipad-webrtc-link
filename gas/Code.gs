@@ -9,7 +9,8 @@ const MAX_MESSAGES_PER_QUEUE = 45;
 function doGet(e) {
   const p = (e && e.parameter) || {};
   if (p.action === "poll") return pollMessages_(p);
-  return output_({ ok: true, service: "WebRTC Link Signaling", version: "0.1" });
+  if (p.action === "health") return jsonpOutput_({ ok: true, service: "WebRTC Link Signaling", version: "0.2" }, p.callback);
+  return output_({ ok: true, service: "WebRTC Link Signaling", version: "0.2" });
 }
 
 function doPost(e) {
@@ -88,6 +89,15 @@ function validMessage_(m) {
 
 function queueKey_(room, role) {
   return "rtc_" + room + "_" + role;
+}
+
+function jsonpOutput_(data, callback) {
+  const name = String(callback || "");
+  if (/^[A-Za-z_$][0-9A-Za-z_$]{0,60}$/.test(name)) {
+    return ContentService.createTextOutput(name + "(" + JSON.stringify(data) + ");")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return output_(data);
 }
 
 function output_(data) {
