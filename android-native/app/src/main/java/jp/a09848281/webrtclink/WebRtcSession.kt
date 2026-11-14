@@ -1,6 +1,14 @@
 package jp.a09848281.webrtclink
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
+import android.os.Build
+import android.os.CancellationSignal
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import android.util.Log
 import org.json.JSONObject
 import org.webrtc.*
@@ -272,6 +280,7 @@ class WebRtcSession(
     private fun handleMessage(message: JSONObject) {
         if (message.optString("room") != room || message.optString("to") != "android") return
         when (message.optString("type")) {
+            "location_request" -> requestOneShotLocation()
             "hangup" -> {
                 report("相手側が切断しました。")
                 close()
@@ -303,6 +312,58 @@ class WebRtcSession(
                 if (remoteDescriptionReady) peer?.addIceCandidate(candidate)
                 else synchronized(pendingCandidates) { pendingCandidates.add(candidate) }
             }
+        }
+    }
+
+    private fun requestOneShotLocation() {
+        if (closed.get()) return
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
+            sendSignal("location_denied", JSONObject().put("reason", "permission-not-granted"))
+            report("iPadから位置情報要求：Androidアプリで位置情報の許可が必要です")
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            sendSignal("location_error", JSONObject().put("reason", "このAndroidバージョンでは現在地取得APIを利用できません"))
+            return
+        }
+        try {
+            val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val provider = when {
+                manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+                else -> null
+            }
+            if (provider == null) {
+                sendSignal("location_error", JSONObject().put("reason", "位置情報サービスがオフです"))
+                return
+            }
+            report("iPadからの要求により、今回限りの位置情報を取得中…")
+            val cancellation = CancellationSignal()
+            val timeout = network.schedule({
+                cancellation.cancel()
+                if (!closed.get()) sendSignal("location_error", JSONObject().put("reason", "位置情報取得がタイムアウトしました"))
+            }, 15, TimeUnit.SECONDS)
+            manager.getCurrentLocation(provider, cancellation, network) { location: Location? ->
+                timeout.cancel(false)
+                if (closed.get()) return@getCurrentLocation
+                if (location == null) {
+                    sendSignal("location_error", JSONObject().put("reason", "現在地を取得できませんでした"))
+                } else {
+                    val payload = JSONObject()
+                        .put("latitude", location.latitude)
+                        .put("longitude", location.longitude)
+                        .put("accuracy", location.accuracy.toDouble())
+                        .put("timestamp", System.currentTimeMillis())
+                    sendSignal("location_result", payload)
+                    report("iPadの要求に応じて1回限りの位置情報を送信しました")
+                }
+            }
+        } catch (security: SecurityException) {
+            sendSignal("location_denied", JSONObject().put("reason", "位置情報の権限がありません"))
+        } catch (error: Throwable) {
+            sendSignal("location_error", JSONObject().put("reason", error.message ?: "位置情報を取得できませんでした"))
         }
     }
 
