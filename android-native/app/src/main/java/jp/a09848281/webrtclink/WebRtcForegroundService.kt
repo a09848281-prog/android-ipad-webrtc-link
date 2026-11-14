@@ -1,5 +1,8 @@
 package jp.a09848281.webrtclink
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,19 +29,38 @@ class WebRtcForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
+        if (intent == null && !getSharedPreferences("webrtc_link", MODE_PRIVATE).getBoolean("active_session", false)) {
             stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_STOP) {
+            val activeSession = webRtcSession
+            if (activeSession != null) activeSession.disconnect { clearPersistedSession(); stopSelf() }
+            else { clearPersistedSession(); stopSelf() }
             return START_NOT_STICKY
         }
 
         val action = intent?.action
+        when (action) {
+            ACTION_TOGGLE_MIC -> { webRtcSession?.setMicrophoneEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
+            ACTION_TOGGLE_VIDEO -> { webRtcSession?.setCameraEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
+            ACTION_SWITCH_CAMERA -> { webRtcSession?.switchCamera(); return START_STICKY }
+            ACTION_SET_CAMERA_PROFILE -> {
+                webRtcSession?.setCameraProfile(
+                    intent?.getIntExtra(EXTRA_WIDTH, 640) ?: 640,
+                    intent?.getIntExtra(EXTRA_HEIGHT, 480) ?: 480,
+                    intent?.getIntExtra(EXTRA_FPS, 15) ?: 15
+                )
+                return START_STICKY
+            }
+        }
         try {
             if (action == ACTION_DIAGNOSTIC_ONLY) {
                 startForegroundCompat(buildNotification("診断：サービスのみ起動中"), false)
                 return START_NOT_STICKY
             }
 
-            if (action != ACTION_START_WEBRTC) {
+            if (action != ACTION_START_WEBRTC && action != null) {
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -47,29 +69,43 @@ class WebRtcForegroundService : Service() {
             acquireWakeLock()
         } catch (error: Exception) {
             android.util.Log.e(TAG, "Foreground service start failed", error)
+            clearPersistedSession()
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val gasUrl = intent.getStringExtra(EXTRA_GAS_URL).orEmpty()
-        val room = intent.getStringExtra(EXTRA_ROOM).orEmpty()
+        val prefs = getSharedPreferences("webrtc_link", MODE_PRIVATE)
+        val gasUrl = intent?.getStringExtra(EXTRA_GAS_URL) ?: prefs.getString("active_gas_url", "").orEmpty()
+        val room = intent?.getStringExtra(EXTRA_ROOM) ?: prefs.getString("active_room", "").orEmpty()
+        val deviceId = intent?.getStringExtra(EXTRA_DEVICE_ID) ?: prefs.getString("active_device_id", "").orEmpty()
+        val authToken = intent?.getStringExtra(EXTRA_AUTH_TOKEN) ?: prefs.getString("active_auth_token", "").orEmpty()
         if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
-            !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}"))) {
+            !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}")) ||
+            !deviceId.matches(Regex("[A-Za-z0-9_-]{16,80}")) || !authToken.matches(Regex("[A-Za-z0-9_-]{40,100}"))) {
             updateNotification("設定エラー：GAS URLまたは接続コード")
+            clearPersistedSession()
             stopSelf()
             return START_NOT_STICKY
         }
 
         webRtcSession?.close()
-        webRtcSession = WebRtcSession(applicationContext, gasUrl, room) { message ->
+        webRtcSession = WebRtcSession(applicationContext, gasUrl, room, deviceId, authToken) { message ->
             updateNotification(message)
+            if (message == "相手側が切断しました。") { clearPersistedSession(); stopSelf() }
         }.also { it.start() }
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    private fun clearPersistedSession() {
+        getSharedPreferences("webrtc_link", MODE_PRIVATE).edit()
+            .putBoolean("active_session", false)
+            .remove("active_gas_url").remove("active_room")
+            .remove("active_device_id").remove("active_auth_token").apply()
     }
 
     private fun startForegroundCompat(notification: Notification, media: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val type = if (media) {
+            var type = if (media) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             } else {
@@ -134,8 +170,18 @@ class WebRtcForegroundService : Service() {
         const val ACTION_START_WEBRTC = "jp.a09848281.webrtclink.START_WEBRTC"
         const val ACTION_DIAGNOSTIC_ONLY = "jp.a09848281.webrtclink.DIAGNOSTIC_ONLY"
         const val ACTION_STOP = "jp.a09848281.webrtclink.STOP"
+        const val ACTION_TOGGLE_MIC = "jp.a09848281.webrtclink.TOGGLE_MIC"
+        const val ACTION_TOGGLE_VIDEO = "jp.a09848281.webrtclink.TOGGLE_VIDEO"
+        const val ACTION_SWITCH_CAMERA = "jp.a09848281.webrtclink.SWITCH_CAMERA"
+        const val ACTION_SET_CAMERA_PROFILE = "jp.a09848281.webrtclink.SET_CAMERA_PROFILE"
+        const val EXTRA_ENABLED = "enabled"
+        const val EXTRA_WIDTH = "width"
+        const val EXTRA_HEIGHT = "height"
+        const val EXTRA_FPS = "fps"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_ROOM = "room_code"
+        const val EXTRA_DEVICE_ID = "device_id"
+        const val EXTRA_AUTH_TOKEN = "auth_token"
         private const val CHANNEL_ID = "webrtc_session"
         private const val NOTIFICATION_ID = 4102
     }

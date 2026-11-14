@@ -1,6 +1,17 @@
 package jp.a09848281.webrtclink
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.location.Location
+import android.location.LocationManager
+import android.os.Build
+import android.os.CancellationSignal
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import android.util.Log
 import org.json.JSONObject
 import org.webrtc.*
@@ -23,6 +34,8 @@ class WebRtcSession(
     private val context: Context,
     private val gasUrl: String,
     private val room: String,
+    private val deviceId: String,
+    private val authToken: String,
     private val onStatus: (String) -> Unit
 ) {
     private val closed = AtomicBoolean(false)
@@ -42,6 +55,13 @@ class WebRtcSession(
     @Volatile private var remoteDescriptionReady = false
     @Volatile private var pollRunning = false
     @Volatile private var currentStage = "RTC-00: 起動待ち"
+    @Volatile private var reconnectAttempts = 0
+    @Volatile private var reconnectInFlight = false
+    @Volatile private var reconnectTimeout: java.util.concurrent.ScheduledFuture<*>? = null
+    @Volatile private var captureWidth = 640
+    @Volatile private var captureHeight = 480
+    @Volatile private var captureFps = 15
+    @Volatile private var statusHeartbeat: java.util.concurrent.ScheduledFuture<*>? = null
 
     private fun stage(message: String) {
         currentStage = message
@@ -56,6 +76,7 @@ class WebRtcSession(
                 initializePeer()
                 stage("RTC-11: GAS受信待ちを開始")
                 startPolling()
+                startDeviceHeartbeat()
                 stage("RTC-12: Offer作成")
                 createOffer()
             } catch (t: Throwable) {
@@ -133,13 +154,25 @@ class WebRtcSession(
     private fun observer() = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) { report("シグナリング: $state") }
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-            report(when (state) {
-                PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> "P2P接続成功！"
-                PeerConnection.IceConnectionState.CHECKING -> "通信経路を確認中…"
-                PeerConnection.IceConnectionState.FAILED -> "P2P接続失敗。ネットワークによってはTURNが必要です。"
-                PeerConnection.IceConnectionState.DISCONNECTED -> "通信が一時切断されました"
-                else -> "ICE: $state"
-            })
+            when (state) {
+                PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> {
+                    reconnectAttempts = 0
+                    reconnectInFlight = false
+                    reconnectTimeout?.cancel(false)
+                    reconnectTimeout = null
+                    report("P2P接続成功！")
+                }
+                PeerConnection.IceConnectionState.CHECKING -> report("通信経路を確認中…")
+                PeerConnection.IceConnectionState.FAILED -> {
+                    report("P2P接続失敗。ICE再起動を試します。")
+                    scheduleIceRestart(0)
+                }
+                PeerConnection.IceConnectionState.DISCONNECTED -> {
+                    report("通信が一時切断されました。復旧を待っています…")
+                    scheduleIceRestart(5000)
+                }
+                else -> report("ICE: $state")
+            }
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
@@ -177,12 +210,113 @@ class WebRtcSession(
         }, MediaConstraints())
     }
 
+    private fun scheduleIceRestart(delayMs: Long) {
+        if (closed.get() || reconnectInFlight || reconnectAttempts >= 3) return
+        network.schedule({ restartIceOffer() }, delayMs, TimeUnit.MILLISECONDS)
+    }
+
+    private fun restartIceOffer() {
+        if (closed.get() || reconnectInFlight || reconnectAttempts >= 3) return
+        val p = peer ?: return
+        if (p.signalingState() != PeerConnection.SignalingState.STABLE) {
+            report("再接続を保留：シグナリング状態 ${p.signalingState()}")
+            return
+        }
+        reconnectInFlight = true
+        reconnectAttempts++
+        report("ICE再起動を試行中（${reconnectAttempts}/3）")
+        val constraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+        }
+        p.createOffer(object : SdpObserver {
+            override fun onCreateSuccess(description: SessionDescription) {
+                p.setLocalDescription(object : SdpObserver {
+                    override fun onSetSuccess() {
+                        sendSignal("offer", JSONObject().put("type", description.type.canonicalForm())
+                            .put("sdp", description.description))
+                        report("再接続Offerを送信しました。iPadの応答を待っています。")
+                        reconnectTimeout = network.schedule({
+                            if (!closed.get() && reconnectInFlight) {
+                                reconnectInFlight = false
+                                report("再接続応答がありません。接続を確認してください。")
+                            }
+                        }, 15, TimeUnit.SECONDS)
+                    }
+                    override fun onSetFailure(error: String) {
+                        reconnectInFlight = false
+                        fail("ICE再起動Local SDP失敗: $error")
+                    }
+                    override fun onCreateSuccess(description: SessionDescription) {}
+                    override fun onCreateFailure(error: String) {}
+                }, description)
+            }
+            override fun onSetSuccess() {}
+            override fun onCreateFailure(error: String) {
+                reconnectInFlight = false
+                fail("ICE再起動Offer失敗: $error")
+            }
+            override fun onSetFailure(error: String) {}
+        }, constraints)
+    }
+
+    fun setMicrophoneEnabled(enabled: Boolean) {
+        if (closed.get()) return
+        network.execute { localAudioTrack?.setEnabled(enabled); report(if (enabled) "Androidマイク：ON" else "Androidマイク：ミュート") }
+    }
+
+    fun setCameraEnabled(enabled: Boolean) {
+        if (closed.get()) return
+        network.execute { localVideoTrack?.setEnabled(enabled); report(if (enabled) "Android映像：ON" else "Android映像：停止") }
+    }
+
+    fun switchCamera() {
+        if (closed.get()) return
+        network.execute {
+            val active = capturer ?: return@execute
+            active.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                override fun onCameraSwitchDone(isFrontCamera: Boolean) {
+                    report(if (isFrontCamera) "前面カメラに切り替えました" else "背面カメラに切り替えました")
+                }
+                override fun onCameraSwitchError(errorDescription: String) {
+                    report("カメラ切替失敗: $errorDescription")
+                }
+            })
+        }
+    }
+
+    fun setCameraProfile(width: Int, height: Int, fps: Int) {
+        if (closed.get()) return
+        val safeWidth = width.coerceIn(320, 1920)
+        val safeHeight = height.coerceIn(240, 1080)
+        val safeFps = fps.coerceIn(10, 30)
+        network.execute {
+            val previous = Triple(captureWidth, captureHeight, captureFps)
+            try {
+                capturer?.stopCapture()
+                capturer?.startCapture(safeWidth, safeHeight, safeFps)
+                captureWidth = safeWidth
+                captureHeight = safeHeight
+                captureFps = safeFps
+                report("Androidカメラ設定：${safeWidth}x${safeHeight} / ${safeFps}fps")
+            } catch (error: Throwable) {
+                try {
+                    capturer?.stopCapture()
+                    capturer?.startCapture(previous.first, previous.second, previous.third)
+                } catch (restoreError: Throwable) {
+                    report("カメラ設定失敗。元の設定にも戻せませんでした: ${restoreError.message}")
+                    return@execute
+                }
+                report("選択した画質は非対応のため、元の設定に戻しました: ${error.message ?: "不明なエラー"}")
+            }
+        }
+    }
+
     private fun startPolling() {
         network.scheduleWithFixedDelay({
             if (closed.get() || pollRunning) return@scheduleWithFixedDelay
             pollRunning = true
             try {
-                val url = URL("$gasUrl?action=poll&room=$room&role=android&_=${System.currentTimeMillis()}")
+                val url = URL("$gasUrl?action=poll&room=$room&role=android&deviceId=$deviceId&authToken=$authToken&_=${System.currentTimeMillis()}")
                 val connection = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"; connectTimeout = 10000; readTimeout = 10000
                     setRequestProperty("Cache-Control", "no-cache")
@@ -208,7 +342,15 @@ class WebRtcSession(
     private fun handleMessage(message: JSONObject) {
         if (message.optString("room") != room || message.optString("to") != "android") return
         when (message.optString("type")) {
+            "location_request" -> requestOneShotLocation()
+            "camera_switch" -> switchCamera()
+            "hangup" -> {
+                report("相手側が切断しました。")
+                close()
+            }
             "answer" -> {
+                reconnectTimeout?.cancel(false)
+                reconnectTimeout = null
                 val payload = message.optJSONObject("payload") ?: return
                 val type = SessionDescription.Type.fromCanonicalForm(payload.optString("type", "answer"))
                 val description = SessionDescription(type, payload.optString("sdp"))
@@ -236,12 +378,95 @@ class WebRtcSession(
         }
     }
 
+    private fun startDeviceHeartbeat() {
+        statusHeartbeat?.cancel(false)
+        statusHeartbeat = network.scheduleAtFixedRate({
+            if (closed.get()) return@scheduleAtFixedRate
+            val battery = try {
+                val manager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }
+            } catch (_: Throwable) { null }
+            val networkType = try {
+                val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val active = manager.activeNetwork
+                val caps = active?.let { manager.getNetworkCapabilities(it) }
+                when {
+                    caps == null -> "offline"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "モバイル通信"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                    else -> "その他"
+                }
+            } catch (_: Throwable) { "不明" }
+            val payload = JSONObject()
+                .put("online", true)
+                .put("deviceLabel", Build.MODEL)
+                .put("batteryPercent", battery ?: JSONObject.NULL)
+                .put("networkType", networkType)
+                .put("timestamp", System.currentTimeMillis())
+            sendSignal("device_status", payload)
+        }, 0, 30, TimeUnit.SECONDS)
+    }
+
+    private fun requestOneShotLocation() {
+        if (closed.get()) return
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
+            sendSignal("location_denied", JSONObject().put("reason", "permission-not-granted"))
+            report("iPadから位置情報要求：Androidアプリで位置情報の許可が必要です")
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            sendSignal("location_error", JSONObject().put("reason", "このAndroidバージョンでは現在地取得APIを利用できません"))
+            return
+        }
+        try {
+            val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val provider = when {
+                manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+                else -> null
+            }
+            if (provider == null) {
+                sendSignal("location_error", JSONObject().put("reason", "位置情報サービスがオフです"))
+                return
+            }
+            report("iPadからの要求により、今回限りの位置情報を取得中…")
+            val cancellation = CancellationSignal()
+            val timeout = network.schedule({
+                cancellation.cancel()
+                if (!closed.get()) sendSignal("location_error", JSONObject().put("reason", "位置情報取得がタイムアウトしました"))
+            }, 25, TimeUnit.SECONDS)
+            manager.getCurrentLocation(provider, cancellation, network) { location: Location? ->
+                timeout.cancel(false)
+                if (closed.get()) return@getCurrentLocation
+                if (location == null) {
+                    sendSignal("location_error", JSONObject().put("reason", "現在地を取得できませんでした"))
+                } else {
+                    val payload = JSONObject()
+                        .put("latitude", location.latitude)
+                        .put("longitude", location.longitude)
+                        .put("accuracy", location.accuracy.toDouble())
+                        .put("timestamp", System.currentTimeMillis())
+                    sendSignal("location_result", payload)
+                    report("iPadの要求に応じて1回限りの位置情報を送信しました")
+                }
+            }
+        } catch (security: SecurityException) {
+            sendSignal("location_denied", JSONObject().put("reason", "位置情報の権限がありません"))
+        } catch (error: Throwable) {
+            sendSignal("location_error", JSONObject().put("reason", error.message ?: "位置情報を取得できませんでした"))
+        }
+    }
+
     private fun sendSignal(type: String, payload: JSONObject) {
         sender.execute {
             if (closed.get()) return@execute
             var connection: HttpURLConnection? = null
             try {
-                val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
+                val message = JSONObject().put("room", room).put("deviceId", deviceId).put("authToken", authToken)
+                    .put("from", "android").put("to", "ipad")
                     .put("type", type).put("payload", payload)
                     .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
                 connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
@@ -261,8 +486,40 @@ class WebRtcSession(
     private fun report(message: String) { if (!closed.get()) onStatus(message) }
     private fun fail(message: String) { report(message); Log.e(TAG, message) }
 
+    fun disconnect(onComplete: () -> Unit) {
+        if (closed.get()) { onComplete(); return }
+        sendSignal("device_status", JSONObject().put("online", false).put("deviceLabel", Build.MODEL)
+            .put("batteryPercent", JSONObject.NULL).put("networkType", "offline").put("timestamp", System.currentTimeMillis()))
+        sender.execute {
+            try {
+                val message = JSONObject().put("room", room).put("deviceId", deviceId).put("authToken", authToken)
+                    .put("from", "android").put("to", "ipad")
+                    .put("type", "hangup").put("payload", JSONObject().put("reason", "android-user-disconnect"))
+                    .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
+                val connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"; doOutput = true
+                    connectTimeout = 5000; readTimeout = 5000
+                    setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                }
+                try {
+                    connection.outputStream.use { it.write(message.toString().toByteArray(Charsets.UTF_8)) }
+                    connection.inputStream.close()
+                } finally { connection.disconnect() }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Hangup signal failed", t)
+            } finally {
+                close()
+                onComplete()
+            }
+        }
+    }
+
     fun close() {
         if (!closed.compareAndSet(false, true)) return
+        reconnectTimeout?.cancel(false)
+        reconnectTimeout = null
+        statusHeartbeat?.cancel(false)
+        statusHeartbeat = null
         Thread({
             try { network.shutdownNow() } catch (_: Throwable) {}
             try { sender.shutdownNow() } catch (_: Throwable) {}
