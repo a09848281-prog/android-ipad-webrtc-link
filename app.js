@@ -6,14 +6,14 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),deviceManagerStatus:$("deviceManagerStatus")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),deviceManagerStatus:$("deviceManagerStatus"),registeredDeviceStatus:$("registeredDeviceStatus"),refreshDeviceStatus:$("refreshDeviceStatus"),connectRegisteredDevice:$("connectRegisteredDevice")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
   let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high",locationTimeout=null,deviceStatusTimer=null;
-  let registeredDevices=loadRegisteredDevices(),activeDevice=null,authDeviceId="",authToken="";
+  let registeredDevices=loadRegisteredDevices(),activeDevice=null,authDeviceId="",authToken="",activePresence=null;
 
   function loadRegisteredDevices(){
     try{const data=JSON.parse(localStorage.getItem("webrtcRegisteredDevices")||"[]");return Array.isArray(data)?data.filter(x=>x&&typeof x.deviceId==="string"&&typeof x.authToken==="string"):[];}
@@ -34,14 +34,38 @@
     else{activeDevice=null;authDeviceId="";authToken="";updateDeviceActions();}
   }
   function setActiveDevice(device){
-    activeDevice=device||null;authDeviceId=device?device.deviceId:"";authToken=device?device.authToken:"";
+    activeDevice=device||null;authDeviceId=device?device.deviceId:"";authToken=device?device.authToken:"";activePresence=null;
+    if(els.registeredDeviceStatus)els.registeredDeviceStatus.textContent=device?"状態を確認しています…":"端末を選択してください。";
     updateDeviceActions();
+    if(device)fetchRegisteredDeviceStatus().catch(error=>{if(els.registeredDeviceStatus)els.registeredDeviceStatus.textContent="状態確認失敗: "+error.message;activePresence=null;updateDeviceActions();});
   }
   function updateDeviceActions(){
     const enabled=!!activeDevice;
-    [els.renameDevice,els.favoriteDevice,els.removeDevice].forEach(button=>{if(button)button.disabled=!enabled;});
+    [els.renameDevice,els.favoriteDevice,els.removeDevice,els.refreshDeviceStatus].forEach(button=>{if(button)button.disabled=!enabled;});
+    if(els.connectRegisteredDevice)els.connectRegisteredDevice.disabled=!(enabled&&activePresence&&activePresence.online&&activePresence.room);
     if(els.favoriteDevice)els.favoriteDevice.textContent=activeDevice&&activeDevice.favorite?"★ お気に入り解除":"☆ お気に入り";
   }
+  async function fetchRegisteredDeviceStatus(){
+    if(!activeDevice)throw new Error("登録端末を選択してください。");
+    if(!validGas())throw new Error("GAS /exec URLを保存してください。");
+    const result=await new Promise((resolve,reject)=>{
+      const callback="webrtcDeviceStatusCallback";const script=document.createElement("script");
+      const timer=setTimeout(()=>{cleanup();reject(new Error("端末状態の確認がタイムアウトしました。"));},8000);
+      function cleanup(){clearTimeout(timer);script.remove();try{delete window[callback];}catch(_){}}
+      window[callback]=(data)=>{cleanup();if(data&&data.ok)resolve(data);else reject(new Error((data&&data.error)||"状態を取得できませんでした。"));};
+      const url=new URL(normalizeGasUrl());url.searchParams.set("action","device_status");url.searchParams.set("deviceId",activeDevice.deviceId);url.searchParams.set("authToken",activeDevice.authToken);url.searchParams.set("callback",callback);url.searchParams.set("_",String(Date.now()));
+      script.src=url.toString();script.onerror=()=>{cleanup();reject(new Error("GASに接続できませんでした。"));};document.head.appendChild(script);
+    });
+    activePresence=result;
+    const status=els.registeredDeviceStatus;
+    if(result.online&&result.room){
+      const battery=result.batteryPercent!==null&&result.batteryPercent!==undefined?Math.round(Number(result.batteryPercent))+"%":"不明";
+      status.textContent="🟢 オンライン / "+(result.deviceLabel||activeDevice.nickname||"Android")+
+        " / 電池 "+battery+" / "+(result.networkType||"通信方式不明")+" / 接続コード "+result.room;
+    }else status.textContent="⚪ オフライン：AndroidアプリでWebRTC待機を開始してください。";
+    updateDeviceActions();return result;
+  }
+
   async function registerPairedDevice(){
     const code=els.pairCodeInput.value.replace(/\D/g,"");
     if(!/^\d{8}$/.test(code)){els.deviceManagerStatus.textContent="8桁のペアリングコードを入力してください。";return;}
@@ -407,6 +431,16 @@
   }
 
   els.runDiagnostics.addEventListener("click",()=>{els.runDiagnostics.disabled=true;els.diagnosticResult.textContent="診断中…";runDiagnostics().catch(e=>{els.diagnosticResult.textContent="診断エラー: "+e.message;}).finally(()=>{els.runDiagnostics.disabled=false;});});
+  els.refreshDeviceStatus.addEventListener("click",()=>fetchRegisteredDeviceStatus().catch(error=>{els.registeredDeviceStatus.textContent="状態確認失敗: "+error.message;activePresence=null;updateDeviceActions();}));
+  els.connectRegisteredDevice.addEventListener("click",async()=>{
+    try{
+      const presence=await fetchRegisteredDeviceStatus();
+      if(!presence.online||!presence.room)throw new Error("Androidが待機中ではありません。AndroidアプリでWebRTCを開始してください。");
+      els.joinCode.value=String(presence.room);
+      setRole("ipad");
+      await joinAndroid();
+    }catch(error){els.deviceManagerStatus.textContent="接続を開始できません: "+error.message;}
+  });
   els.registerDevice.addEventListener("click",()=>registerPairedDevice().catch(error=>{els.deviceManagerStatus.textContent="端末登録に失敗しました: "+error.message;}).finally(()=>{els.registerDevice.disabled=false;}));
   els.registeredDeviceSelect.addEventListener("change",()=>{
     const selected=registeredDevices.find(d=>d.deviceId===els.registeredDeviceSelect.value)||null;
