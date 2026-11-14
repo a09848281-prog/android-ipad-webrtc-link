@@ -17,6 +17,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var gasUrlInput: EditText
     private lateinit var roomCodeView: TextView
+    private var microphoneEnabled = true
+    private var cameraEnabled = true
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -84,6 +86,67 @@ class MainActivity : ComponentActivity() {
                 else locationPermissionLauncher.launch(missing.toTypedArray())
             }
         }
+        val mediaControls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(8, 16, 8, 8)
+            addView(TextView(this@MainActivity).apply {
+                text = "③ 通信中のメディア操作"
+                textSize = 18f
+                setPadding(0, 8, 0, 8)
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "🎙️ マイクをミュート / 解除"
+                setOnClickListener {
+                    microphoneEnabled = !microphoneEnabled
+                    sendMediaAction(WebRtcForegroundService.ACTION_TOGGLE_MIC, WebRtcForegroundService.EXTRA_ENABLED, microphoneEnabled)
+                    status.text = if (microphoneEnabled) "Androidマイク：ON" else "Androidマイク：ミュート"
+                }
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "📷 カメラ映像を停止 / 再開"
+                setOnClickListener {
+                    cameraEnabled = !cameraEnabled
+                    sendMediaAction(WebRtcForegroundService.ACTION_TOGGLE_VIDEO, WebRtcForegroundService.EXTRA_ENABLED, cameraEnabled)
+                    status.text = if (cameraEnabled) "Android映像：ON" else "Android映像：停止"
+                }
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "🔄 前後カメラ切替"
+                setOnClickListener { sendMediaAction(WebRtcForegroundService.ACTION_SWITCH_CAMERA) }
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "画質（Androidカメラ）"
+                setPadding(0, 8, 0, 4)
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "360p / 15fps（低負荷）"
+                setOnClickListener { setCameraProfile(640, 360, 15) }
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "720p / 24fps（標準）"
+                setOnClickListener { setCameraProfile(1280, 720, 24) }
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "1080p / 30fps（高負荷）"
+                setOnClickListener { setCameraProfile(1920, 1080, 30) }
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "🎧 音声のみモード"
+                setOnClickListener {
+                    cameraEnabled = false
+                    sendMediaAction(WebRtcForegroundService.ACTION_TOGGLE_VIDEO, WebRtcForegroundService.EXTRA_ENABLED, false)
+                    status.text = "音声のみモード：映像を停止しました"
+                }
+            })
+            addView(Button(this@MainActivity).apply {
+                text = "🎥 映像のみモード"
+                setOnClickListener {
+                    microphoneEnabled = false
+                    sendMediaAction(WebRtcForegroundService.ACTION_TOGGLE_MIC, WebRtcForegroundService.EXTRA_ENABLED, false)
+                    status.text = "映像のみモード：マイクをミュートしました"
+                }
+            })
+        }
         val stop = Button(this).apply {
             text = "サービスを停止"
             setOnClickListener {
@@ -110,9 +173,34 @@ class MainActivity : ComponentActivity() {
             addView(serviceTest)
             addView(rtcStart)
             addView(locationPermission)
+            addView(mediaControls)
             addView(stop)
             addView(status)
         })
+    }
+
+    private fun sendMediaAction(action: String, extraKey: String? = null, enabled: Boolean = true) {
+        val intent = Intent(this, WebRtcForegroundService::class.java).setAction(action)
+        if (extraKey != null) intent.putExtra(extraKey, enabled)
+        try {
+            startService(intent)
+        } catch (error: Exception) {
+            status.text = "メディア操作を送信できません: ${error.message}"
+        }
+    }
+
+    private fun setCameraProfile(width: Int, height: Int, fps: Int) {
+        val intent = Intent(this, WebRtcForegroundService::class.java)
+            .setAction(WebRtcForegroundService.ACTION_SET_CAMERA_PROFILE)
+            .putExtra(WebRtcForegroundService.EXTRA_WIDTH, width)
+            .putExtra(WebRtcForegroundService.EXTRA_HEIGHT, height)
+            .putExtra(WebRtcForegroundService.EXTRA_FPS, fps)
+        try {
+            startService(intent)
+            status.text = "カメラ設定を要求しました：${width}x${height} / ${fps}fps"
+        } catch (error: Exception) {
+            status.text = "カメラ設定に失敗しました: ${error.message}"
+        }
     }
 
     private fun startServiceOnly() {
