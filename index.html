@@ -58,6 +58,12 @@
         <div id="videoPlaceholder" class="placeholder"><span>📡</span><b>映像待機中</b><small>接続するとAndroid側の映像が表示されます</small></div>
       </div>
       <div class="video-labels"><span>相手側の映像</span><span id="mediaState">映像・音声：未受信</span></div>
+      <div class="location-panel">
+        <h3>📍 Androidの位置情報（要求したときだけ）</h3>
+        <button id="requestLocation" class="secondary full" type="button" disabled>📍 位置情報を見る</button>
+        <p id="locationStatus" class="hint" role="status">接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。</p>
+        <div id="locationResult" class="location-result hidden"></div>
+      </div>
       <div class="ptt-area">
         <button id="pttButton" class="ptt" disabled>🎙️ 押している間だけ話す</button>
         <p class="hint">iPad側で接続後に使用できます。ボタンを離すとマイクがミュートになります。</p>
