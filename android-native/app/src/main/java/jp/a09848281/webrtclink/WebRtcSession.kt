@@ -272,6 +272,10 @@ class WebRtcSession(
     private fun handleMessage(message: JSONObject) {
         if (message.optString("room") != room || message.optString("to") != "android") return
         when (message.optString("type")) {
+            "hangup" -> {
+                report("相手側が切断しました。")
+                close()
+            }
             "answer" -> {
                 reconnectTimeout?.cancel(false)
                 reconnectTimeout = null
@@ -326,6 +330,31 @@ class WebRtcSession(
 
     private fun report(message: String) { if (!closed.get()) onStatus(message) }
     private fun fail(message: String) { report(message); Log.e(TAG, message) }
+
+    fun disconnect(onComplete: () -> Unit) {
+        if (closed.get()) { onComplete(); return }
+        sender.execute {
+            try {
+                val message = JSONObject().put("room", room).put("from", "android").put("to", "ipad")
+                    .put("type", "hangup").put("payload", JSONObject().put("reason", "android-user-disconnect"))
+                    .put("id", UUID.randomUUID().toString()).put("time", System.currentTimeMillis())
+                val connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"; doOutput = true
+                    connectTimeout = 5000; readTimeout = 5000
+                    setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                }
+                try {
+                    connection.outputStream.use { it.write(message.toString().toByteArray(Charsets.UTF_8)) }
+                    connection.inputStream.close()
+                } finally { connection.disconnect() }
+            } catch (t: Throwable) {
+                Log.w(TAG, "Hangup signal failed", t)
+            } finally {
+                close()
+                onComplete()
+            }
+        }
+    }
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return
