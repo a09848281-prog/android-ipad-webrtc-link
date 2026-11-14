@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
         val stop = Button(this).apply {
             text = "サービスを停止"
             setOnClickListener {
-                stopService(Intent(this@MainActivity, WebRtcForegroundService::class.java))
+                startService(Intent(this@MainActivity, WebRtcForegroundService::class.java).setAction(WebRtcForegroundService.ACTION_STOP))
                 status.text = "サービスを停止しました。"
                 roomCodeView.text = "接続コード：------"
             }
