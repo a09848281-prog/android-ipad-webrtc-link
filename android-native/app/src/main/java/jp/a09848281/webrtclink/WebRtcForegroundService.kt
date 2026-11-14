@@ -33,6 +33,19 @@ class WebRtcForegroundService : Service() {
         }
 
         val action = intent?.action
+        when (action) {
+            ACTION_TOGGLE_MIC -> { webRtcSession?.setMicrophoneEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
+            ACTION_TOGGLE_VIDEO -> { webRtcSession?.setCameraEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
+            ACTION_SWITCH_CAMERA -> { webRtcSession?.switchCamera(); return START_STICKY }
+            ACTION_SET_CAMERA_PROFILE -> {
+                webRtcSession?.setCameraProfile(
+                    intent?.getIntExtra(EXTRA_WIDTH, 640) ?: 640,
+                    intent?.getIntExtra(EXTRA_HEIGHT, 480) ?: 480,
+                    intent?.getIntExtra(EXTRA_FPS, 15) ?: 15
+                )
+                return START_STICKY
+            }
+        }
         try {
             if (action == ACTION_DIAGNOSTIC_ONLY) {
                 startForegroundCompat(buildNotification("診断：サービスのみ起動中"), false)
@@ -136,6 +149,14 @@ class WebRtcForegroundService : Service() {
         const val ACTION_START_WEBRTC = "jp.a09848281.webrtclink.START_WEBRTC"
         const val ACTION_DIAGNOSTIC_ONLY = "jp.a09848281.webrtclink.DIAGNOSTIC_ONLY"
         const val ACTION_STOP = "jp.a09848281.webrtclink.STOP"
+        const val ACTION_TOGGLE_MIC = "jp.a09848281.webrtclink.TOGGLE_MIC"
+        const val ACTION_TOGGLE_VIDEO = "jp.a09848281.webrtclink.TOGGLE_VIDEO"
+        const val ACTION_SWITCH_CAMERA = "jp.a09848281.webrtclink.SWITCH_CAMERA"
+        const val ACTION_SET_CAMERA_PROFILE = "jp.a09848281.webrtclink.SET_CAMERA_PROFILE"
+        const val EXTRA_ENABLED = "enabled"
+        const val EXTRA_WIDTH = "width"
+        const val EXTRA_HEIGHT = "height"
+        const val EXTRA_FPS = "fps"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_ROOM = "room_code"
         private const val CHANNEL_ID = "webrtc_session"
