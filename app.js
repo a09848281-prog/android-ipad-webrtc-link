@@ -177,10 +177,12 @@
         const network=String(p.networkType||"不明").slice(0,30);
         els.devicePresence.textContent="🟢 "+label+"：オンライン / 電池 "+battery+" / "+network;
         els.devicePresence.classList.add("online");
+        if(activeDevice&&activeDevice.deviceId===authDeviceId){activePresence={...p,online:true};updateDeviceActions();}
         if(deviceStatusTimer)clearTimeout(deviceStatusTimer);
         deviceStatusTimer=setTimeout(()=>{
           els.devicePresence.textContent="⚪ Android端末：オフラインまたは応答なし";
           els.devicePresence.classList.remove("online");
+          if(activeDevice&&activeDevice.deviceId===authDeviceId){activePresence={online:false};updateDeviceActions();}
         },50000);
         return;
       }
