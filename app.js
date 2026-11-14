@@ -102,7 +102,8 @@
       }catch(_){}
     },2000);
   }
-\n  function setupPeer(){
+
+  function setupPeer(){
     pc=peerConfig();
     pc.onicecandidate=(event)=>{if(event.candidate) sendSignal("candidate",event.candidate.toJSON(),role==="android"?"ipad":"android").catch(()=>{});};
     pc.onconnectionstatechange=()=>{
