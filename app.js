@@ -248,7 +248,7 @@
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true; els.disconnect.disabled=false; els.requestLocation.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setCameraControlsEnabled(true);setState("接続待機中","wait");startPolling();
+    started=true; els.disconnect.disabled=false; els.requestLocation.disabled=role!=="ipad"; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setCameraControlsEnabled(true);setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
@@ -260,7 +260,7 @@
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=false;els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(options={}){
