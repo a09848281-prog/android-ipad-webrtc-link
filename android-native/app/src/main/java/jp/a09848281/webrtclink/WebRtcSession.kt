@@ -41,6 +41,8 @@ class WebRtcSession(
     private val closed = AtomicBoolean(false)
     private val network = Executors.newSingleThreadScheduledExecutor()
     private val sender = Executors.newSingleThreadExecutor()
+    private val locationExecutor = Executors.newSingleThreadExecutor()
+    private val locationScheduler = Executors.newSingleThreadScheduledExecutor()
     private var factory: PeerConnectionFactory? = null
     private var eglBase: EglBase? = null
     private var peer: PeerConnection? = null
@@ -269,16 +271,22 @@ class WebRtcSession(
         network.execute { localVideoTrack?.setEnabled(enabled); report(if (enabled) "Android映像：ON" else "Android映像：停止") }
     }
 
-    fun switchCamera() {
+    fun switchCamera(notifyPeer: Boolean = false) {
         if (closed.get()) return
         network.execute {
-            val active = capturer ?: return@execute
+            val active = capturer
+            if (active == null) {
+                if (notifyPeer) sendSignal("camera_switch_result", JSONObject().put("ok", false).put("reason", "カメラが起動していません"))
+                return@execute
+            }
             active.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
                 override fun onCameraSwitchDone(isFrontCamera: Boolean) {
                     report(if (isFrontCamera) "前面カメラに切り替えました" else "背面カメラに切り替えました")
+                    if (notifyPeer) sendSignal("camera_switch_result", JSONObject().put("ok", true).put("front", isFrontCamera))
                 }
                 override fun onCameraSwitchError(errorDescription: String) {
                     report("カメラ切替失敗: $errorDescription")
+                    if (notifyPeer) sendSignal("camera_switch_result", JSONObject().put("ok", false).put("reason", errorDescription.take(160)))
                 }
             })
         }
@@ -343,7 +351,7 @@ class WebRtcSession(
         if (message.optString("room") != room || message.optString("to") != "android") return
         when (message.optString("type")) {
             "location_request" -> requestOneShotLocation()
-            "camera_switch" -> switchCamera()
+            "camera_switch" -> switchCamera(notifyPeer = true)
             "hangup" -> {
                 report("相手側が切断しました。")
                 close()
@@ -410,53 +418,89 @@ class WebRtcSession(
 
     private fun requestOneShotLocation() {
         if (closed.get()) return
-        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) {
-            sendSignal("location_denied", JSONObject().put("reason", "permission-not-granted"))
-            report("iPadから位置情報要求：Androidアプリで位置情報の許可が必要です")
-            return
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            sendSignal("location_error", JSONObject().put("reason", "このAndroidバージョンでは現在地取得APIを利用できません"))
-            return
-        }
-        try {
+        locationExecutor.execute {
+            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (!fine && !coarse) {
+                sendSignal("location_denied", JSONObject().put("reason", "Androidの位置情報権限が許可されていません"))
+                report("位置情報要求：Androidアプリの位置情報権限が必要です")
+                return@execute
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                sendSignal("location_error", JSONObject().put("reason", "Android 11以降の現在地取得APIが必要です"))
+                return@execute
+            }
             val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val provider = when {
-                manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-                manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-                else -> null
+            val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+                .filter { provider -> try { manager.isProviderEnabled(provider) } catch (_: Throwable) { false } }
+            if (providers.isEmpty()) {
+                sendSignal("location_error", JSONObject().put("reason", "端末の位置情報サービスがオフです"))
+                return@execute
             }
-            if (provider == null) {
-                sendSignal("location_error", JSONObject().put("reason", "位置情報サービスがオフです"))
-                return
-            }
-            report("iPadからの要求により、今回限りの位置情報を取得中…")
+            report("iPadからの要求を受信：位置情報を1回だけ取得しています…")
+            val completed = AtomicBoolean(false)
             val cancellation = CancellationSignal()
-            val timeout = network.schedule({
-                cancellation.cancel()
-                if (!closed.get()) sendSignal("location_error", JSONObject().put("reason", "位置情報取得がタイムアウトしました"))
-            }, 25, TimeUnit.SECONDS)
-            manager.getCurrentLocation(provider, cancellation, network) { location: Location? ->
+            val timeout = locationScheduler.schedule({
+                if (completed.compareAndSet(false, true)) {
+                    try { cancellation.cancel() } catch (_: Throwable) {}
+                    sendSignal("location_error", JSONObject().put("reason", "位置情報の取得が40秒でタイムアウトしました。GPS・Wi-Fi・位置情報設定を確認してください"))
+                }
+            }, 40, TimeUnit.SECONDS)
+
+            fun deliver(location: Location, source: String) {
+                if (!completed.compareAndSet(false, true)) return
                 timeout.cancel(false)
-                if (closed.get()) return@getCurrentLocation
-                if (location == null) {
-                    sendSignal("location_error", JSONObject().put("reason", "現在地を取得できませんでした"))
-                } else {
-                    val payload = JSONObject()
-                        .put("latitude", location.latitude)
-                        .put("longitude", location.longitude)
-                        .put("accuracy", location.accuracy.toDouble())
-                        .put("timestamp", System.currentTimeMillis())
-                    sendSignal("location_result", payload)
-                    report("iPadの要求に応じて1回限りの位置情報を送信しました")
+                val payload = JSONObject()
+                    .put("latitude", location.latitude)
+                    .put("longitude", location.longitude)
+                    .put("accuracy", location.accuracy.toDouble())
+                    .put("timestamp", location.time)
+                    .put("source", source)
+                sendSignal("location_result", payload)
+                report("位置情報をiPadへ送信しました（精度 " + location.accuracy.toInt() + "m）")
+            }
+
+            try {
+                val cached = providers.mapNotNull { provider ->
+                    try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null } catch (_: Throwable) { null }
+                }.filter { System.currentTimeMillis() - it.time <= 120_000L }
+                    .minByOrNull { it.accuracy }
+                if (cached != null && cached.accuracy <= 200f) {
+                    deliver(cached, "recent-cache")
+                    return@execute
+                }
+
+                fun requestProvider(index: Int) {
+                    if (completed.get() || closed.get()) return
+                    if (index >= providers.size) {
+                        if (completed.compareAndSet(false, true)) {
+                            timeout.cancel(false)
+                            sendSignal("location_error", JSONObject().put("reason", "GPS・ネットワークの両方から現在地を取得できませんでした。屋外またはWi-Fi接続で再試行してください"))
+                        }
+                        return
+                    }
+                    val provider = providers[index]
+                    try {
+                        manager.getCurrentLocation(provider, cancellation, locationExecutor) { location: Location? ->
+                            if (location != null) deliver(location, provider) else requestProvider(index + 1)
+                        }
+                    } catch (security: SecurityException) {
+                        if (index + 1 < providers.size) requestProvider(index + 1)
+                        else if (completed.compareAndSet(false, true)) {
+                            timeout.cancel(false)
+                            sendSignal("location_denied", JSONObject().put("reason", "位置情報の権限がありません"))
+                        }
+                    } catch (error: Throwable) {
+                        requestProvider(index + 1)
+                    }
+                }
+                requestProvider(0)
+            } catch (error: Throwable) {
+                if (completed.compareAndSet(false, true)) {
+                    timeout.cancel(false)
+                    sendSignal("location_error", JSONObject().put("reason", error.message ?: "位置情報取得エラー"))
                 }
             }
-        } catch (security: SecurityException) {
-            sendSignal("location_denied", JSONObject().put("reason", "位置情報の権限がありません"))
-        } catch (error: Throwable) {
-            sendSignal("location_error", JSONObject().put("reason", error.message ?: "位置情報を取得できませんでした"))
         }
     }
 
@@ -523,6 +567,8 @@ class WebRtcSession(
         Thread({
             try { network.shutdownNow() } catch (_: Throwable) {}
             try { sender.shutdownNow() } catch (_: Throwable) {}
+            try { locationExecutor.shutdownNow() } catch (_: Throwable) {}
+            try { locationScheduler.shutdownNow() } catch (_: Throwable) {}
             try { capturer?.stopCapture() } catch (_: Throwable) {}
             try { capturer?.dispose() } catch (_: Throwable) {}
             capturer = null
