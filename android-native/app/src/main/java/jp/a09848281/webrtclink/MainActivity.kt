@@ -245,7 +245,7 @@ class MainActivity : ComponentActivity() {
         }
         val pairBytes = ByteArray(4)
         SecureRandom().nextBytes(pairBytes)
-        val pairCode = (10000000L + (java.nio.ByteBuffer.wrap(pairBytes).int.toLong() and 0x7fffffffL) % 90000000L).toString()
+        val pairCode = (10000000L + (java.nio.ByteBuffer.wrap(pairBytes).getInt().toLong() and 0x7fffffffL) % 90000000L).toString()
         status.text = "ペアリングコードを発行しています…"
         Thread {
             var connection: HttpURLConnection? = null
