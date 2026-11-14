@@ -529,7 +529,6 @@
       localStream.addTrack(newTrack);
       els.localVideo.srcObject=localStream;
       cameraFacing=next;
-      updateCameraCapabilities();
       log(next==="user"?"前面カメラに切り替えました。":"背面カメラに切り替えました。");
     }catch(error){if(replacement)replacement.getTracks().forEach(track=>track.stop());log("カメラ切替に失敗しました: "+error.message);}
     finally{els.cameraSwitch.disabled=false;}
