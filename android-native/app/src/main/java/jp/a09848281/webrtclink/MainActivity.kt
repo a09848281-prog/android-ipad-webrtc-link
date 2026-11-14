@@ -34,11 +34,7 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
             val microphoneGranted = result[Manifest.permission.RECORD_AUDIO] == true ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            val bluetoothGranted = Build.VERSION.SDK_INT < 31 ||
-                result[Manifest.permission.BLUETOOTH_CONNECT] == true ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-
-            if (cameraGranted && microphoneGranted && bluetoothGranted) startWebRtcService()
+            if (cameraGranted && microphoneGranted) startWebRtcService()
             else status.text = "カメラ・マイク・Bluetooth接続の必要な許可がありません。設定から確認してください。"
         }
 
@@ -299,7 +295,6 @@ class MainActivity : ComponentActivity() {
         val permissions = buildList {
             add(Manifest.permission.CAMERA)
             add(Manifest.permission.RECORD_AUDIO)
-            if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }
         val missing = permissions.filter {
