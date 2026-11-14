@@ -49,7 +49,8 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
             status.text = if (granted) {
-                "位置情報の許可を設定しました。実際の取得はiPadで「位置情報を見る」を押したときだけ行います。"
+                if (webRtcStarted) "許可を設定しました。位置情報機能を有効にするにはWebRTCを一度停止して再起動してください。取得はiPadのボタンを押したときだけです。"
+                else "位置情報の許可を設定しました。実際の取得はiPadで「位置情報を見る」を押したときだけ行います。"
             } else {
                 "位置情報は許可されていません。iPadからの位置情報要求には応答できません。"
             }
