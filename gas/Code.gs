@@ -33,7 +33,8 @@ function doPost(e) {
         timestamp: Date.now()
       }), 65);
     }
-    const key = queueKey_(m.room, m.to);
+    const isLocationMessage = /^(location_request|location_result|location_denied|location_error)$/.test(String(m.type));
+    const key = isLocationMessage ? locationQueueKey_(m.room, m.to) : queueKey_(m.room, m.to);
     const lock = LockService.getScriptLock();
     lock.waitLock(8000);
     try {
@@ -50,7 +51,7 @@ function doPost(e) {
         time: Date.now()
       });
       const recent = current.slice(-MAX_MESSAGES_PER_QUEUE);
-      cache.put(key, JSON.stringify(recent), ROOM_TTL_SECONDS);
+      cache.put(key, JSON.stringify(recent), isLocationMessage ? 30 : ROOM_TTL_SECONDS);
     } finally {
       lock.releaseLock();
     }
@@ -80,12 +81,18 @@ function pollMessages_(p) {
   try {
     const all = JSON.parse(cache.get(queueKey) || "[]");
     messages = all.filter(function(message) { return message.deviceId === deviceId; });
-    // Location request/results are one-shot commands/data, never retained as history.
     const retained = all.filter(function(message) {
       return !/^(location_request|location_result|location_denied|location_error)$/.test(message.type);
     });
     if (retained.length) cache.put(queueKey, JSON.stringify(retained), ROOM_TTL_SECONDS);
     else cache.remove(queueKey);
+    // One-shot location payloads use a separate 30-second cache key and are
+    // deleted as soon as the authenticated intended peer polls them.
+    const transientKey = locationQueueKey_(room, role);
+    const transient = JSON.parse(cache.get(transientKey) || "[]");
+    const transientForDevice = transient.filter(function(message) { return message.deviceId === deviceId; });
+    messages = messages.concat(transientForDevice);
+    if (transient.length) cache.remove(transientKey);
   } finally {
     lock.releaseLock();
   }
@@ -215,6 +222,10 @@ function authorizedDevice_(deviceId, authToken) {
 
 function queueKey_(room, role) {
   return "rtc_" + room + "_" + role;
+}
+
+function locationQueueKey_(room, role) {
+  return "loc_" + room + "_" + role;
 }
 
 function jsonpOutput_(data, callback) {
