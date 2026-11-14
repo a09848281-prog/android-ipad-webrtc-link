@@ -53,6 +53,9 @@ class WebRtcSession(
     @Volatile private var reconnectAttempts = 0
     @Volatile private var reconnectInFlight = false
     @Volatile private var reconnectTimeout: java.util.concurrent.ScheduledFuture<*>? = null
+    @Volatile private var captureWidth = 640
+    @Volatile private var captureHeight = 480
+    @Volatile private var captureFps = 15
 
     private fun stage(message: String) {
         currentStage = message
@@ -280,12 +283,23 @@ class WebRtcSession(
         val safeHeight = height.coerceIn(240, 1080)
         val safeFps = fps.coerceIn(10, 30)
         network.execute {
+            val previous = Triple(captureWidth, captureHeight, captureFps)
             try {
                 capturer?.stopCapture()
                 capturer?.startCapture(safeWidth, safeHeight, safeFps)
+                captureWidth = safeWidth
+                captureHeight = safeHeight
+                captureFps = safeFps
                 report("Androidカメラ設定：${safeWidth}x${safeHeight} / ${safeFps}fps")
             } catch (error: Throwable) {
-                report("カメラ設定を適用できません: ${error.message ?: "不明なエラー"}")
+                try {
+                    capturer?.stopCapture()
+                    capturer?.startCapture(previous.first, previous.second, previous.third)
+                } catch (restoreError: Throwable) {
+                    report("カメラ設定失敗。元の設定にも戻せませんでした: ${restoreError.message}")
+                    return@execute
+                }
+                report("選択した画質は非対応のため、元の設定に戻しました: ${error.message ?: "不明なエラー"}")
             }
         }
     }
