@@ -90,6 +90,15 @@ class MainActivity : ComponentActivity() {
             }, margin())
         }
         setContentView(ScrollView(this).apply { addView(root) })
+        // Restore the existing call state when the user opens the Activity during a call.
+        val savedRoom = prefs.getString("active_room", "").orEmpty()
+        if (prefs.getBoolean("active_session", false) && savedRoom.matches(Regex("\\d{6}"))) {
+            webRtcStarted = true
+            roomCodeView.text = savedRoom
+            startButton.text = "● 通話待機中（再起動しない）"
+            startButton.isEnabled = false
+            showStatus("通話サービスはバックグラウンドで動作中です。この画面を開いても通信は再起動しません。", false)
+        }
     }
 
     private fun margin() = LinearLayout.LayoutParams(-1,-2).apply { setMargins(0,10,0,10) }
@@ -154,6 +163,16 @@ class MainActivity : ComponentActivity() {
         if(missing.isEmpty())startWebRtcService() else permissionLauncher.launch(missing.toTypedArray())
     }
     private fun startWebRtcService() {
+        val existingPrefs = getSharedPreferences("webrtc_link", MODE_PRIVATE)
+        val existingRoom = existingPrefs.getString("active_room", "").orEmpty()
+        if (existingPrefs.getBoolean("active_session", false) && existingRoom.matches(Regex("\\d{6}"))) {
+            webRtcStarted = true
+            roomCodeView.text = existingRoom
+            startButton.text = "● 通話待機中（再起動しない）"
+            startButton.isEnabled = false
+            showStatus("既存の通話サービスを維持しています。新しい接続を開始しません。", false)
+            return
+        }
         val gasUrl=gasUrlInput.text.toString().trim().trimEnd('/')
         if(!gasUrl.startsWith("https://script.google.com/macros/s/")||!gasUrl.endsWith("/exec")||gasUrl.contains("?")){showStatus("GAS WebアプリURLを確認してください。末尾は /exec です。",true);return}
         val prefs=getSharedPreferences("webrtc_link",MODE_PRIVATE)
