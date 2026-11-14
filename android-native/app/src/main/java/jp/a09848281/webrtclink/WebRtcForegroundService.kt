@@ -93,7 +93,12 @@ class WebRtcForegroundService : Service() {
         if (wakeLock?.isHeld == true) return
         val manager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:WebRtcSession")
-            .apply { setReferenceCounted(false); acquire(30 * 60 * 1000L) }
+            .apply {
+                setReferenceCounted(false)
+                // Keep the CPU awake while the user-started foreground call is active.
+                // The lock is always released in onDestroy when the call/service ends.
+                acquire()
+            }
     }
 
     private fun updateNotification(message: String) {
