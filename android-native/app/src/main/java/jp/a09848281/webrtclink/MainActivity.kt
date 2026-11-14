@@ -32,6 +32,19 @@ class MainActivity : ComponentActivity() {
             else status.text = "カメラ・マイク・Bluetooth接続の必要な許可がありません。設定から確認してください。"
         }
 
+    private val locationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                result[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            status.text = if (granted) {
+                "位置情報の許可を設定しました。実際の取得はiPadで「位置情報を見る」を押したときだけ行います。"
+            } else {
+                "位置情報は許可されていません。iPadからの位置情報要求には応答できません。"
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply {
@@ -56,6 +69,20 @@ class MainActivity : ComponentActivity() {
         val rtcStart = Button(this).apply {
             text = "② WebRTCを開始（診断）"
             setOnClickListener { requestMediaPermissions() }
+        }
+        val locationPermission = Button(this).apply {
+            text = "位置情報の許可を設定（取得はしません）"
+            setOnClickListener {
+                val permissions = arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                )
+                val missing = permissions.filter {
+                    ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED
+                }
+                if (missing.isEmpty()) status.text = "位置情報の許可は設定済みです。iPadのボタンを押したときだけ取得します。"
+                else locationPermissionLauncher.launch(missing.toTypedArray())
+            }
         }
         val stop = Button(this).apply {
             text = "サービスを停止"
@@ -82,6 +109,7 @@ class MainActivity : ComponentActivity() {
             addView(roomCodeView)
             addView(serviceTest)
             addView(rtcStart)
+            addView(locationPermission)
             addView(stop)
             addView(status)
         })
