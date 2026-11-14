@@ -27,3 +27,6 @@ button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:12px 15px
 .location-panel{margin:14px 0;padding:12px;border:1px solid #d7deea;border-radius:12px;background:#f8fafc}
 .location-panel h3{margin:0 0 10px;font-size:14px}
 .location-result{margin-top:10px;padding:10px;border-radius:8px;background:#e8f0fe;overflow-wrap:anywhere;font-size:13px}
+
+.device-presence{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#0d1727;color:var(--muted);font-size:13px}
+.device-presence.online{border-color:#278d6d;color:#8be3bf}
