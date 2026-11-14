@@ -259,7 +259,7 @@
       const state=pc.connectionState;
       if(state==="connected"){
         clearReconnectTimer();reconnectAttempts=0;reconnecting=false;
-        setState("接続中","ok");if(role==="ipad")els.cameraSwitch.disabled=false;connectedAt=connectedAt||Date.now();recordDeviceConnection();startStats();log("端末同士が接続されました。");
+        setState("接続中","ok");if(role==="ipad"){els.cameraSwitch.disabled=false;els.ptt.disabled=false;}connectedAt=connectedAt||Date.now();recordDeviceConnection();startStats();log("端末同士が接続されました。");
       }else if(state==="connecting"){setState(reconnecting?"再接続中":"接続処理中","wait");}
       else if(state==="failed"){
         setState("再接続を準備中","wait");scheduleReconnect(0);
@@ -384,7 +384,7 @@
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.cameraSwitch.disabled=role!=="ipad";els.devicePresence.textContent="🟡 Android端末の状態を確認中…";els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.cameraSwitch.disabled=role!=="ipad";els.devicePresence.textContent="🟡 Android端末の状態を確認中…";els.ptt.disabled=true;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(options={}){
