@@ -62,6 +62,56 @@ class WebRtcSession(
     @Volatile private var captureHeight = 480
     @Volatile private var captureFps = 15
     @Volatile private var statusHeartbeat: java.util.concurrent.ScheduledFuture<*>? = null
+    @Volatile private var statsHeartbeat: java.util.concurrent.ScheduledFuture<*>? = null
+    @Volatile private var lastStatsBytesReceived: Long? = null
+    @Volatile private var lastStatsAtMs: Long? = null
+
+    private fun startStatsMonitor() {
+        statsHeartbeat?.cancel(false)
+        statsHeartbeat = network.scheduleAtFixedRate({
+            if (closed.get()) return@scheduleAtFixedRate
+            val connection = peer ?: return@scheduleAtFixedRate
+            connection.getStats(object : StatsObserver {
+                override fun onComplete(reports: Array<StatsReport>) {
+                    if (closed.get()) return
+                    var bytesReceived: Long? = null
+                    var packetsLost: Long? = null
+                    var packetsReceived: Long? = null
+                    var rttSeconds: Double? = null
+                    reports.forEach { report ->
+                        report.values.forEach { value ->
+                            when (value.name) {
+                                "bytesReceived" -> bytesReceived = value.value.toLongOrNull() ?: bytesReceived
+                                "packetsLost" -> packetsLost = value.value.toLongOrNull() ?: packetsLost
+                                "packetsReceived" -> packetsReceived = value.value.toLongOrNull() ?: packetsReceived
+                                "currentRoundTripTime" -> rttSeconds = value.value.toDoubleOrNull() ?: rttSeconds
+                                "googRtt" -> if (rttSeconds == null) rttSeconds = value.value.toDoubleOrNull()?.div(1000.0)
+                            }
+                        }
+                    }
+                    val now = System.currentTimeMillis()
+                    val previousBytes = lastStatsBytesReceived
+                    val previousAt = lastStatsAtMs
+                    val bitrate = if (bytesReceived != null && previousBytes != null && previousAt != null && now > previousAt) {
+                        (((bytesReceived!! - previousBytes).coerceAtLeast(0L) * 8_000L) / (now - previousAt)) / 1000
+                    } else null
+                    if (bytesReceived != null) lastStatsBytesReceived = bytesReceived
+                    lastStatsAtMs = now
+                    val lossPercent = if (packetsLost != null && packetsReceived != null &&
+                        packetsLost!! + packetsReceived!! > 0) {
+                        packetsLost!!.toDouble() * 100.0 / (packetsLost!! + packetsReceived!!)
+                    } else null
+                    val summary = buildString {
+                        append("RTC統計")
+                        append(" / RTT ").append(rttSeconds?.let { "${(it * 1000).toInt()}ms" } ?: "不明")
+                        append(" / 受信 ").append(bitrate?.let { "${it}kbps" } ?: "計測中")
+                        append(" / loss ").append(lossPercent?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "不明")
+                    }
+                    report(summary)
+                }
+            })
+        }, 5, 5, TimeUnit.SECONDS)
+    }
 
     private fun stage(message: String) {
         currentStage = message
@@ -378,6 +428,7 @@ class WebRtcSession(
     }
 
     private fun startDeviceHeartbeat() {
+        startStatsMonitor()
         statusHeartbeat?.cancel(false)
         statusHeartbeat = network.scheduleAtFixedRate({
             if (closed.get()) return@scheduleAtFixedRate
@@ -519,6 +570,8 @@ class WebRtcSession(
         reconnectTimeout = null
         statusHeartbeat?.cancel(false)
         statusHeartbeat = null
+        statsHeartbeat?.cancel(false)
+        statsHeartbeat = null
         Thread({
             try { network.shutdownNow() } catch (_: Throwable) {}
             try { sender.shutdownNow() } catch (_: Throwable) {}
