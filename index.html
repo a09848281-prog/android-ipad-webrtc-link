@@ -1,142 +1,56 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <meta name="description" content="AndroidとiPadをWebRTCで直接つなぐ個人用通信ツール">
-  <title>Android ⇄ iPad WebRTC Link</title>
-  <link rel="stylesheet" href="./style.css">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="./manifest.webmanifest"><meta name="description" content="AndroidとiPadを安全に接続するWebRTC Link">
+<title>WebRTC Link</title><link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <main class="app">
-    <header class="header">
-      <div class="logo">🔗</div>
-      <div><h1>WebRTC Link</h1><p>Android ⇄ iPad P2P通信</p></div>
-      <span class="tag">試作版 0.1</span>
-    </header>
-
-    <section class="panel">
-      <h2>① 接続設定</h2>
-      <label for="gasUrl">GAS WebアプリURL（/exec）</label>
-      <input id="gasUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="url">
-      <p class="hint">同じGAS URLをAndroidとiPadの両方に設定してください。</p>
-      <div class="actions">
-        <button id="saveGas" class="secondary">URLを保存</button>
-        <span id="gasStatus" class="small-status">未設定</span>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>② 端末を選択</h2>
-      <div class="device-manager">
-        <h3>🔐 登録済みAndroid端末</h3>
-        <label for="pairCodeInput">Androidアプリに表示された8桁ペアリングコード</label>
-        <div class="actions">
-          <input id="pairCodeInput" type="text" inputmode="numeric" maxlength="8" placeholder="8桁コード">
-          <button id="registerDevice" class="secondary" type="button">端末登録</button>
-        </div>
-        <label for="registeredDeviceSelect">接続する登録端末</label>
-        <select id="registeredDeviceSelect" class="device-select"><option value="">端末を登録してください</option></select>
-        <p id="registeredDeviceStatus" class="hint">端末の状態はまだ確認していません。</p>
-        <div class="actions">
-          <button id="refreshDeviceStatus" class="secondary" type="button" disabled>状態を更新</button>
-          <button id="connectRegisteredDevice" class="primary" type="button" disabled>Androidに接続</button>
-        </div>
-        <div class="actions">
-          <button id="renameDevice" class="tiny" type="button" disabled>名前変更</button>
-          <button id="favoriteDevice" class="tiny" type="button" disabled>☆ お気に入り</button>
-          <button id="removeDevice" class="tiny danger" type="button" disabled>登録解除</button>
-          <button id="viewDeviceHistory" class="tiny" type="button" disabled>接続履歴</button>
-        </div>
-        <p id="deviceManagerStatus" class="hint">ペアリングコードは5分間有効・1回限りです。登録情報はこのiPadのブラウザ内に保存します。</p>
-      </div>
-      <div class="role-grid">
-        <button id="hostMode" class="role active" type="button"><span>📱</span><b>Android側</b><small>カメラ・マイクを送信</small></button>
-        <button id="viewerMode" class="role" type="button"><span>🍎</span><b>iPad側</b><small>映像受信・PTT送信</small></button>
-      </div>
-
-      <div id="hostPanel" class="role-panel">
-        <button id="startHost" class="primary full">カメラ・マイクを開始して接続待機</button>
-        <div class="code-box"><small>接続コード</small><strong id="roomCode">------</strong><button id="copyCode" class="tiny" disabled>コピー</button></div>
-        <p class="hint">表示された6桁コードをiPad側に入力してください。</p>
-      </div>
-
-      <div id="viewerPanel" class="role-panel hidden">
-        <label for="joinCode">Android側に表示された6桁コード</label>
-        <input id="joinCode" type="text" inputmode="numeric" maxlength="6" placeholder="例：123456">
-        <button id="joinRoom" class="primary full">接続する</button>
-        <p class="hint">iPadのマイク使用許可が表示されたら許可してください。</p>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>🔎 接続前チェック</h2>
-      <button id="runDiagnostics" class="secondary full" type="button">通信・WebRTCを診断</button>
-      <p id="diagnosticResult" class="hint" role="status">接続前にブラウザ、GAS、STUN通信を確認できます。カメラ・マイクは起動しません。</p>
-    </section>
-
-    <section class="panel">
-      <div class="section-title"><h2>③ 通信画面</h2><span id="connectionState" class="state">未接続</span></div>
-      <div id="devicePresence" class="device-presence" role="status">📱 Android端末：状態不明</div>
-      <div class="video-wrap">
-        <video id="remoteVideo" autoplay playsinline controls></video>
-        <div id="videoPlaceholder" class="placeholder"><span>📡</span><b>映像待機中</b><small>接続するとAndroid側の映像がここに表示されます</small></div>
-      </div>
-      <div class="video-labels"><span>相手側の映像</span><span id="mediaState">映像・音声：未受信</span></div>
-      <div class="location-panel">
-        <h3>📍 Androidの位置情報（要求したときだけ）</h3>
-        <button id="requestLocation" class="secondary full" type="button" disabled>📍 位置情報を見る</button>
-        <p id="locationStatus" class="hint" role="status">接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。</p>
-        <div id="locationResult" class="location-result hidden"></div>
-      </div>
-      <div class="ptt-area">
-        <button id="pttButton" class="ptt" disabled>🎙️ 押している間だけ話す</button>
-        <p class="hint">iPad側で接続後に使用できます。ボタンを離すとマイクがミュートになります。</p>
-      </div>
-      <div class="media-controls">
-        <h3>🎛️ メディア操作</h3>
-        <div class="actions"><button id="micToggle" class="secondary" disabled>🎙️ マイクをミュート</button><button id="videoToggle" class="secondary" disabled>📷 映像を停止</button></div>
-        <label for="remoteVolume">🔊 相手の音量</label>
-        <input id="remoteVolume" type="range" min="0" max="1" step="0.05" value="1" disabled>
-        <p class="hint">音量調整はこの端末で再生する相手の音声に適用されます。</p>
-      </div>
-      <div class="local-preview">
-        <video id="localVideo" autoplay playsinline muted></video>
-        <div class="preview-actions"><span>この端末のカメラ（Android側のみ）</span><button id="cameraSwitch" class="tiny" type="button" disabled>🔄 前後カメラ切替</button></div>
-      <div class="camera-controls">
-        <h3>📷 Androidカメラ設定</h3>
-        <div class="camera-setting"><label for="resolutionSelect">解像度</label><select id="resolutionSelect" disabled><option value="640x360">360p</option><option value="1280x720" selected>720p</option><option value="1920x1080">1080p</option></select></div>
-        <div class="camera-setting"><label for="fpsSelect">フレームレート</label><select id="fpsSelect" disabled><option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30" selected>30 FPS</option></select></div>
-        <div class="camera-setting"><label for="zoomRange">ズーム <span id="zoomValue">対応端末のみ</span></label><input id="zoomRange" type="range" min="1" max="1" step="0.1" value="1" disabled></div>
-        <label class="camera-setting"><input id="torchToggle" type="checkbox" disabled> 🔦 ライト（対応端末のみ）</label>
-        <label class="camera-setting"><input id="adaptiveToggle" type="checkbox" checked disabled> 📶 通信状況に合わせて画質を調整</label>
-        <p class="hint">対応状況はAndroid端末によって異なります。画質変更が反映されない場合は接続ログを確認してください。</p>
-      </div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>④ 通信状態</h2>
-      <div class="stats-grid">
-        <div>接続時間<strong id="duration">--:--</strong></div>
-        <div>RTT<strong id="rtt">—</strong></div>
-        <div>受信速度<strong id="bitrate">—</strong></div>
-        <div>パケット損失<strong id="packetLoss">—</strong></div>
-      </div>
-      <p class="hint">統計値は接続中にブラウザが取得できる範囲で表示します。</p>
-    </section>
-    <section class="panel">
-      <h2>⑤ 操作</h2>
-      <button id="disconnect" class="danger full" disabled>切断する</button>
-      <p id="log" class="log" role="status" aria-live="polite">GAS URLを設定してください。</p>
-    </section>
-
-    <footer>映像・音声はWebRTCで端末間を直接通信します。GASは接続情報の交換だけに使用します。</footer>
-  </main>
-  <script src="./app.js" defer></script>
-</body>
-</html>
+<main class="workspace">
+<aside class="sidebar">
+  <header class="brand"><div class="brand-mark">W</div><div><strong>WebRTC Link</strong><small>SECURE DEVICE LINK</small></div></header>
+  <section class="side-section">
+    <div class="side-heading">接続設定</div>
+    <label for="gasUrl">接続サーバー URL</label><input id="gasUrl" type="url" placeholder="GAS /exec URL">
+    <div class="inline-row"><button id="saveGas" class="btn subtle">URLを保存</button><span id="gasStatus" class="muted">未設定</span></div>
+  </section>
+  <section class="side-section">
+    <div class="side-heading">登録端末</div>
+    <label for="pairCodeInput">Androidのペアリングコード</label>
+    <div class="inline-row"><input id="pairCodeInput" inputmode="numeric" maxlength="8" placeholder="8桁コード"><button id="registerDevice" class="btn primary">登録</button></div>
+    <label for="registeredDeviceSelect">接続する端末</label>
+    <select id="registeredDeviceSelect" class="field"><option value="">端末を登録してください</option></select>
+    <p id="registeredDeviceStatus" class="muted">端末の状態を確認します。</p>
+    <div class="device-actions"><button id="refreshDeviceStatus" class="btn subtle" disabled>状態更新</button><button id="removeDevice" class="btn danger-outline" disabled>端末を削除</button></div>
+    <div class="device-actions secondary-actions"><button id="renameDevice" class="btn ghost" disabled>名前変更</button><button id="favoriteDevice" class="btn ghost" disabled>☆ お気に入り</button><button id="viewDeviceHistory" class="btn ghost" disabled>履歴</button></div>
+    <button id="connectRegisteredDevice" class="btn primary wide" disabled>この端末に接続</button>
+    <p id="deviceManagerStatus" class="muted">ペアリングコードは5分間有効・1回限りです。</p>
+  </section>
+  <section class="side-section location-card">
+    <div class="side-heading">位置情報</div>
+    <p class="muted">必要なときだけAndroidに1回取得を要求します。</p>
+    <button id="requestLocation" class="btn subtle wide" disabled>⌖ Androidの位置情報を取得</button>
+    <p id="locationStatus" class="muted" role="status">通話接続後に利用できます。</p>
+    <div id="locationResult" class="location-result hidden"></div>
+  </section>
+  <div class="sidebar-footer"><span class="secure-dot"></span> P2P暗号化通信 · GASは接続情報のみ</div>
+</aside>
+<section class="main-panel">
+  <header class="topbar"><div><span class="eyebrow">LIVE CONNECTION</span><h1>デバイス通話</h1><p>登録したAndroid端末とプライベートに接続します。</p></div><div id="connectionState" class="state">未接続</div></header>
+  <div class="connection-banner" id="devicePresence">Android端末：状態を確認しています</div>
+  <section class="video-stage">
+    <div class="video-wrap"><video id="remoteVideo" autoplay playsinline></video><div id="videoPlaceholder" class="placeholder"><div class="placeholder-icon">◉</div><b>映像を待っています</b><small>左側から端末を選び「この端末に接続」を押してください</small></div></div>
+    <div class="video-toolbar"><div><strong>Android カメラ</strong><span id="mediaState">映像・音声：未受信</span></div><button id="cameraSwitch" class="btn subtle" disabled>⇄ カメラを切り替え</button></div>
+  </section>
+  <section class="connection-details"><div class="detail-card"><span>接続時間</span><strong id="duration">--:--</strong></div><div class="detail-card"><span>応答時間</span><strong id="rtt">—</strong></div><div class="detail-card"><span>受信速度</span><strong id="bitrate">—</strong></div><div class="detail-card"><span>パケット損失</span><strong id="packetLoss">—</strong></div></section>
+  <div class="bottom-actions"><button id="disconnect" class="btn danger" disabled>通話を終了</button><p id="log" role="status" aria-live="polite">接続サーバーURLを設定し、Android端末を登録してください。</p></div>
+  <footer class="main-footer">WebRTC Link · Android ⇄ iPad</footer>
+</section>
+<div class="compatibility hidden" aria-hidden="true">
+<button id="hostMode"></button><button id="viewerMode"></button><div id="hostPanel"></div><div id="viewerPanel"></div><button id="startHost"></button><span id="roomCode"></span><button id="copyCode"></button><input id="joinCode"><button id="joinRoom"></button><button id="pttButton"></button><button id="micToggle"></button><button id="videoToggle"></button><input id="remoteVolume" type="range"><video id="localVideo"></video><select id="resolutionSelect"><option value="1280x720">720p</option></select><select id="fpsSelect"><option value="30">30</option></select><input id="zoomRange" type="range"><span id="zoomValue"></span><input id="torchToggle" type="checkbox"><input id="adaptiveToggle" type="checkbox"><button id="runDiagnostics"></button><div id="diagnosticResult"></div>
+</div>
+<script src="./app.js" defer></script>
+</main>
+</body></html>
