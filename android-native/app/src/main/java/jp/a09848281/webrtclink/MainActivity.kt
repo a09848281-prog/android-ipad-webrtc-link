@@ -236,7 +236,7 @@ class MainActivity : ComponentActivity() {
             status.text = "先に正しいGAS /exec URLを入力してください。"
             return
         }
-        val prefs = getPreferences(MODE_PRIVATE)
+        val prefs = getSharedPreferences("webrtc_link", MODE_PRIVATE)
         val deviceId = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().replace("-", "")
         val authToken = prefs.getString("device_auth_token", null) ?: run {
             val bytes = ByteArray(32)
@@ -316,7 +316,7 @@ class MainActivity : ComponentActivity() {
             status.text = "GAS WebアプリURLを確認してください。末尾が /exec のURLを入力します。"
             return
         }
-        val prefs = getPreferences(MODE_PRIVATE)
+        val prefs = getSharedPreferences("webrtc_link", MODE_PRIVATE)
         val deviceId = prefs.getString("device_id", null)
         val authToken = prefs.getString("device_auth_token", null)
         if (deviceId.isNullOrBlank() || authToken.isNullOrBlank()) {
@@ -339,6 +339,9 @@ class MainActivity : ComponentActivity() {
             roomCodeView.text = "接続コード：$room"
             status.text = "RTC診断を開始しました。番号表示は初期化成功を意味しません。通知の最後のRTC段階を確認してください。"
         } catch (error: Exception) {
+            prefs.edit().putBoolean("active_session", false).remove("active_gas_url").remove("active_room")
+                .remove("active_device_id").remove("active_auth_token").apply()
+            webRtcStarted = false
             status.text = "WebRTCサービス起動失敗: ${error.javaClass.simpleName}: ${error.message}"
         }
     }
