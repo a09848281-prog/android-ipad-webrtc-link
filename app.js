@@ -6,13 +6,13 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
-  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high";
+  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high",locationTimeout=null;
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -73,6 +73,25 @@
   async function handleSignal(m){
     if(m.room!==room || m.to!==role) return;
     try{
+      if(m.type==="location_result" && role==="ipad"){
+        if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}
+        const p=m.payload||{};
+        if(typeof p.latitude!=="number"||typeof p.longitude!=="number"){els.locationStatus.textContent="位置情報の形式が正しくありません。";return;}
+        els.locationResult.textContent="緯度: "+p.latitude.toFixed(6)+" / 経度: "+p.longitude.toFixed(6)+" / 精度: "+(Number.isFinite(p.accuracy)?Math.round(p.accuracy)+" m":"不明");
+        els.locationResult.classList.remove("hidden");
+        els.locationStatus.textContent="Androidから今回の位置情報を受信しました。表示はこの接続中だけです。";
+        els.requestLocation.disabled=false;return;
+      }
+      if(m.type==="location_denied" && role==="ipad"){
+        if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}
+        els.locationStatus.textContent="Android側で位置情報の許可が必要です。Androidアプリを開いて位置情報の許可を行ってください。";
+        els.requestLocation.disabled=false;return;
+      }
+      if(m.type==="location_error" && role==="ipad"){
+        if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}
+        els.locationStatus.textContent="Androidの位置情報を取得できませんでした: "+String((m.payload||{}).reason||"不明");
+        els.requestLocation.disabled=false;return;
+      }
       if(m.type==="hangup"){
         log("相手側から切断通知を受信しました。");
         await stop({notify:false,reason:"相手側が接続を終了しました。"});
@@ -229,7 +248,7 @@
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setCameraControlsEnabled(true);setState("接続待機中","wait");startPolling();
+    started=true; els.disconnect.disabled=false; els.requestLocation.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setCameraControlsEnabled(true);setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
@@ -241,7 +260,7 @@
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true;els.disconnect.disabled=false;els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=false;els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(options={}){
@@ -253,7 +272,7 @@
       try{await sendSignal("hangup",{reason:"user-disconnect"},role==="android"?"ipad":"android");}
       catch(_){log("切断通知を送信できませんでした。ローカル側の終了処理を続行します。");}
     }
-    started=false;stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
+    started=false;if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}els.requestLocation.disabled=true;els.locationResult.textContent="";els.locationResult.classList.add("hidden");els.locationStatus.textContent="接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。";stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
     if(pc){pc.ontrack=null;pc.onicecandidate=null;pc.onconnectionstatechange=null;pc.close();pc=null;}
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
@@ -278,6 +297,15 @@
   els.joinRoom.addEventListener("click",()=>joinAndroid().catch(e=>{console.error(e);log(e.message);els.joinRoom.disabled=false;}));
   els.copyCode.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(room);log("接続コードをコピーしました。");}catch(_){log("コードを長押ししてコピーしてください。");}});
   els.disconnect.addEventListener("click",stop);
+  els.requestLocation.addEventListener("click",async()=>{
+    if(role!=="ipad"||!started||!pc||pc.connectionState!=="connected"){els.locationStatus.textContent="Androidと接続してから押してください。";return;}
+    els.requestLocation.disabled=true;els.locationResult.textContent="";els.locationResult.classList.add("hidden");
+    els.locationStatus.textContent="Androidへ1回限りの取得を要求しています…";
+    try{await sendSignal("location_request",{oneShot:true},"android");}
+    catch(error){els.locationStatus.textContent="要求を送信できませんでした: "+error.message;els.requestLocation.disabled=false;return;}
+    locationTimeout=setTimeout(()=>{locationTimeout=null;els.locationStatus.textContent="応答がありません。Androidの接続・位置情報許可を確認してください。";els.requestLocation.disabled=false;},20000);
+  });
+
   els.micToggle.addEventListener("click",()=>{
     const tracks=localStream?localStream.getAudioTracks():[];
     if(!tracks.length){log("この端末のマイクトラックがありません。");return;}
