@@ -65,7 +65,7 @@ function validMessage_(m) {
   if (!m || !/^\d{6}$/.test(String(m.room || ""))) return false;
   if (!/^(android|ipad)$/.test(String(m.from || ""))) return false;
   if (!/^(android|ipad)$/.test(String(m.to || "")) || m.from === m.to) return false;
-  if (!/^(offer|answer|candidate|hangup|location_request|location_result|location_denied|location_error)$/.test(String(m.type || ""))) return false;
+  if (!/^(offer|answer|candidate|hangup|location_request|location_result|location_denied|location_error|device_status)$/.test(String(m.type || ""))) return false;
   if (!m.id || String(m.id).length > 100) return false;
   if (m.type === "location_request") {
     if (m.from !== "ipad" || m.to !== "android" || !m.payload || m.payload.oneShot !== true) return false;
@@ -76,6 +76,12 @@ function validMessage_(m) {
     if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) return false;
   }
   if ((m.type === "location_denied" || m.type === "location_error") && (m.from !== "android" || m.to !== "ipad")) return false;
+  if (m.type === "device_status") {
+    if (m.from !== "android" || m.to !== "ipad" || !m.payload) return false;
+    if (String(m.payload.deviceLabel || "").length > 80) return false;
+    const battery = m.payload.batteryPercent;
+    if (battery !== null && (!Number.isFinite(Number(battery)) || Number(battery) < 0 || Number(battery) > 100)) return false;
+  }
   const text = JSON.stringify(m.payload);
   return text.length > 0 && text.length < 50000;
 }
