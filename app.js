@@ -12,7 +12,7 @@
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
-  let reconnectTimer=null,reconnectAttempts=0,reconnecting=false;
+  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false;
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -136,6 +136,7 @@
   }
   function clearReconnectTimer(){
     if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+    if(reconnectWatchdog){clearTimeout(reconnectWatchdog);reconnectWatchdog=null;}
   }
   function scheduleReconnect(delay){
     if(!started||role!=="android"||reconnectTimer||reconnecting)return;
@@ -166,6 +167,7 @@
       await pc.setLocalDescription(offer);
       await sendSignal("offer",pc.localDescription,"ipad");
       log("ICE再起動Offerを送信しました。応答を待っています…");
+      reconnectWatchdog=setTimeout(()=>{reconnectWatchdog=null;if(!started||!reconnecting)return;reconnecting=false;log("再接続応答がタイムアウトしました。再試行します。");scheduleReconnect();},15000);
     }catch(error){reconnecting=false;throw error;}
   }
 
