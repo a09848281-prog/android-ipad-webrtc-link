@@ -12,6 +12,7 @@
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
+  let reconnectTimer=null,reconnectAttempts=0,reconnecting=false;
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -112,12 +113,17 @@
     pc=peerConfig();
     pc.onicecandidate=(event)=>{if(event.candidate) sendSignal("candidate",event.candidate.toJSON(),role==="android"?"ipad":"android").catch(()=>{});};
     pc.onconnectionstatechange=()=>{
-      const s=pc.connectionState;
-      if(s==="connected"){setState("接続中","ok");connectedAt=connectedAt||Date.now();startStats();log("端末同士が接続されました。");}
-      else if(s==="connecting"){setState("接続処理中","wait");}
-      else if(s==="failed"){setState("接続失敗");log("P2P接続に失敗しました。別のWi-Fiやモバイル回線ではTURNサーバーが必要になる場合があります。");}
-      else if(s==="disconnected"){setState("切断");}
-      else if(s==="closed"){setState("未接続");}
+      if(!pc)return;
+      const state=pc.connectionState;
+      if(state==="connected"){
+        clearReconnectTimer();reconnectAttempts=0;reconnecting=false;
+        setState("接続中","ok");connectedAt=connectedAt||Date.now();startStats();log("端末同士が接続されました。");
+      }else if(state==="connecting"){setState(reconnecting?"再接続中":"接続処理中","wait");}
+      else if(state==="failed"){
+        setState("再接続を準備中","wait");scheduleReconnect(0);
+      }else if(state==="disconnected"){
+        setState("接続が不安定です","wait");scheduleReconnect(5000);
+      }else if(state==="closed"){setState("未接続");}
     };
     pc.ontrack=(event)=>{
       let stream=event.streams && event.streams[0];
@@ -128,6 +134,41 @@
     };
     pc.oniceconnectionstatechange=()=>{if(pc.iceConnectionState==="checking")setState("経路確認中","wait");};
   }
+  function clearReconnectTimer(){
+    if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+  }
+  function scheduleReconnect(delay){
+    if(!started||role!=="android"||reconnectTimer||reconnecting)return;
+    if(reconnectAttempts>=5){
+      setState("再接続できません");
+      log("自動再接続を5回試しましたが復旧できませんでした。手動で接続し直してください。");
+      return;
+    }
+    const wait=delay==null?Math.min(2000*Math.pow(2,reconnectAttempts),15000):delay;
+    setState("再接続を待機中","wait");
+    log("通信が切れました。"+Math.ceil(wait/1000)+"秒後に再接続を試します（"+(reconnectAttempts+1)+"/5）。");
+    reconnectTimer=setTimeout(()=>{reconnectTimer=null;restartIce().catch(error=>{
+      reconnecting=false;log("再接続処理に失敗しました: "+error.message);scheduleReconnect();
+    });},wait);
+  }
+  async function restartIce(){
+    if(!started||role!=="android"||!pc||reconnecting)return;
+    reconnecting=true;reconnectAttempts++;
+    setState("再接続中","wait");
+    try{
+      if(pc.signalingState!=="stable"){
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        if(!pc||!started)throw new Error("接続が終了しました。");
+        if(pc.signalingState!=="stable")throw new Error("シグナリング状態が安定していません。");
+      }
+      remoteDescriptionSet=false;pendingCandidates=[];
+      const offer=await pc.createOffer({iceRestart:true});
+      await pc.setLocalDescription(offer);
+      await sendSignal("offer",pc.localDescription,"ipad");
+      log("ICE再起動Offerを送信しました。応答を待っています…");
+    }catch(error){reconnecting=false;throw error;}
+  }
+
   async function getMedia(constraints){
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("このブラウザではカメラ・マイクを利用できません。HTTPSのページで開いてください。");
     return navigator.mediaDevices.getUserMedia(constraints);
@@ -138,6 +179,7 @@
     cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:1280},height:{ideal:720}}});
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+    reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
     started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
@@ -149,6 +191,7 @@
     localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
+    reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
     started=true;els.disconnect.disabled=false;els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
@@ -156,6 +199,7 @@
     const notify=options.notify!==false;
     const reason=options.reason||"切断しました。";
     const wasStarted=started;
+    clearReconnectTimer();reconnecting=false;reconnectAttempts=0;
     if(notify&&wasStarted&&room){
       try{await sendSignal("hangup",{reason:"user-disconnect"},role==="android"?"ipad":"android");}
       catch(_){log("切断通知を送信できませんでした。ローカル側の終了処理を続行します。");}
