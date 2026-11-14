@@ -11,6 +11,7 @@ function doGet(e) {
   if (p.action === "poll") return pollMessages_(p);
   if (p.action === "health") return jsonpOutput_({ ok: true, service: "WebRTC Link Signaling", version: "0.3" }, p.callback);
   if (p.action === "pair_complete") return pairComplete_(p);
+  if (p.action === "device_status") return deviceStatus_(p);
   return output_({ ok: true, service: "WebRTC Link Signaling", version: "0.3" });
 }
 
@@ -21,6 +22,16 @@ function doPost(e) {
     const m = JSON.parse(raw);
     if (m.action === "pair_start") return pairStart_(m);
     if (!validMessage_(m)) return output_({ ok: false, error: "invalid_message" });
+    if (m.type === "device_status") {
+      CacheService.getScriptCache().put("device_presence_" + m.deviceId, JSON.stringify({
+        online: m.payload.online !== false,
+        room: String(m.room),
+        deviceLabel: String(m.payload.deviceLabel || "Android端末").slice(0, 80),
+        batteryPercent: m.payload.batteryPercent,
+        networkType: String(m.payload.networkType || "不明").slice(0, 30),
+        timestamp: Date.now()
+      }), 65);
+    }
     const key = queueKey_(m.room, m.to);
     const lock = LockService.getScriptLock();
     lock.waitLock(8000);
@@ -90,6 +101,7 @@ function validMessage_(m) {
   if (m.type === "device_status") {
     if (m.from !== "android" || m.to !== "ipad" || !m.payload) return false;
     if (String(m.payload.deviceLabel || "").length > 80) return false;
+    if (m.payload.online !== undefined && typeof m.payload.online !== "boolean") return false;
     const battery = m.payload.batteryPercent;
     if (battery !== null && (!Number.isFinite(Number(battery)) || Number(battery) < 0 || Number(battery) > 100)) return false;
   }
@@ -140,6 +152,18 @@ function pairComplete_(p) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function deviceStatus_(p) {
+  const callback = String(p.callback || "");
+  const deviceId = String(p.deviceId || "");
+  const authToken = String(p.authToken || "");
+  if (!authorizedDevice_(deviceId, authToken)) {
+    return jsonpOutput_({ ok: false, error: "unauthorized", online: false }, callback);
+  }
+  const raw = CacheService.getScriptCache().get("device_presence_" + deviceId);
+  const presence = raw ? JSON.parse(raw) : { online: false };
+  return jsonpOutput_({ ok: true, ...presence }, callback);
 }
 
 function authorizedDevice_(deviceId, authToken) {
