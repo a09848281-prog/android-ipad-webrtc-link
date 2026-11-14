@@ -477,7 +477,7 @@
     if(!activeDevice)return;
     const history=Array.isArray(activeDevice.history)?activeDevice.history:[];
     const lines=history.slice(0,20).map((item,index)=>(index+1)+". "+new Date(item.time).toLocaleString());
-    alert(lines.length?"接続履歴（最新20件）\\n"+lines.join("\\n"):"この端末の接続履歴はありません。");
+    alert(lines.length?"接続履歴（最新20件）\n"+lines.join("\n"):"この端末の接続履歴はありません。");
   });
   els.removeDevice.addEventListener("click",async()=>{
     if(!activeDevice||!confirm("このAndroid端末の登録を解除しますか？このiPad以外に保存された同じ登録情報も無効になります。"))return;
