@@ -25,3 +25,29 @@ label{display:block;color:#b9c7da;font-size:11px;margin:12px 0 7px}input,.field{
 .ptt-button.active{background:linear-gradient(120deg,#a72d48,#d94c62);border-color:#ff8797;box-shadow:0 0 0 4px #e94c6324}
 .ptt-button:disabled{opacity:.4}
 @media(max-width:650px){.call-controls{width:100%}.call-controls .btn{flex:1}}
+
+
+/* iPad layout correction: keep the call area centered and use the available width. */
+.main-panel{width:100%;max-width:1180px;margin-inline:auto;min-width:0}
+.video-stage,.connection-details,.bottom-actions{width:100%;min-width:0}
+.video-stage{margin-inline:auto}
+.video-wrap{width:100%;min-height:0;max-height:none}
+.topbar,.connection-banner{width:100%}
+/* iPad landscape: compact sidebar, centered call canvas. */
+@media (min-width:651px) and (max-width:1024px) and (orientation:landscape){
+  .workspace{grid-template-columns:238px minmax(0,1fr);max-width:100%;width:100%}
+  .sidebar{padding:20px 13px 16px;gap:14px}
+  .side-section{padding:14px 12px}
+  .main-panel{padding:24px 20px 20px}
+  .video-wrap{aspect-ratio:16/9;min-height:250px;max-height:none}
+  .connection-details{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+/* iPad portrait: stack the settings above the centered call view. */
+@media (min-width:651px) and (max-width:1024px) and (orientation:portrait){
+  .workspace{display:flex;flex-direction:column;max-width:900px;margin:0 auto}
+  .sidebar{min-height:0;border-right:0;border-bottom:1px solid var(--line);padding:18px 22px;gap:12px}
+  .sidebar-footer{margin-top:0}
+  .main-panel{padding:24px 22px 20px}
+  .video-wrap{min-height:0;max-height:none}
+  .connection-details{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
