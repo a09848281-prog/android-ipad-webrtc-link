@@ -398,6 +398,7 @@ class WebRtcSession(
                 }
             } catch (_: Throwable) { "不明" }
             val payload = JSONObject()
+                .put("online", true)
                 .put("deviceLabel", Build.MODEL)
                 .put("batteryPercent", battery ?: JSONObject.NULL)
                 .put("networkType", networkType)
@@ -486,6 +487,8 @@ class WebRtcSession(
 
     fun disconnect(onComplete: () -> Unit) {
         if (closed.get()) { onComplete(); return }
+        sendSignal("device_status", JSONObject().put("online", false).put("deviceLabel", Build.MODEL)
+            .put("batteryPercent", JSONObject.NULL).put("networkType", "offline").put("timestamp", System.currentTimeMillis()))
         sender.execute {
             try {
                 val message = JSONObject().put("room", room).put("deviceId", deviceId).put("authToken", authToken)
