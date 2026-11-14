@@ -42,14 +42,18 @@ class WebRtcForegroundService : Service() {
         }
 
         val action = intent?.action
-        if (action == ACTION_START_WEBRTC && webRtcSession != null) {
+        // The foreground service owns the PeerConnection. Reopening the Activity or
+        // receiving a sticky/null restart command must never replace a live session.
+        // A different room is rejected while a session is already active; the user
+        // must explicitly stop the current session before starting another one.
+        if (webRtcSession != null && (action == null || action == ACTION_START_WEBRTC)) {
             val requestedRoom = intent?.getStringExtra(EXTRA_ROOM)
-            if (!requestedRoom.isNullOrBlank() && requestedRoom == activeRoom) {
-                // The Activity may be reopened while the foreground call is already alive.
-                // Never tear down and recreate the active PeerConnection for the same room.
-                updateNotification("通話待機中：$requestedRoom")
-                return START_STICKY
+            if (requestedRoom.isNullOrBlank() || requestedRoom == activeRoom) {
+                updateNotification("通話待機中：${activeRoom ?: "接続中"}")
+            } else {
+                updateNotification("既存の通話を維持中：${activeRoom ?: "接続中"}")
             }
+            return START_STICKY
         }
         when (action) {
             ACTION_TOGGLE_MIC -> { webRtcSession?.setMicrophoneEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
