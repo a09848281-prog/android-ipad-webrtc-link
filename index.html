@@ -69,7 +69,17 @@
     </section>
 
     <section class="panel">
-      <h2>④ 操作</h2>
+      <h2>④ 通信状態</h2>
+      <div class="stats-grid">
+        <div>接続時間<strong id="duration">--:--</strong></div>
+        <div>RTT<strong id="rtt">—</strong></div>
+        <div>受信速度<strong id="bitrate">—</strong></div>
+        <div>パケット損失<strong id="packetLoss">—</strong></div>
+      </div>
+      <p class="hint">統計値は接続中にブラウザが取得できる範囲で表示します。</p>
+    </section>
+    <section class="panel">
+      <h2>⑤ 操作</h2>
       <button id="disconnect" class="danger full" disabled>切断する</button>
       <p id="log" class="log" role="status" aria-live="polite">GAS URLを設定してください。</p>
     </section>
