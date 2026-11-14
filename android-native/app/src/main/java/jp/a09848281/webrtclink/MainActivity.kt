@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
     private fun requestMediaPermissions() {
-        val perms=buildList{add(Manifest.permission.CAMERA);add(Manifest.permission.RECORD_AUDIO);if(Build.VERSION.SDK_INT>=33)add(Manifest.permission.POST_NOTIFICATIONS)}
+        val perms=buildList{add(Manifest.permission.CAMERA);add(Manifest.permission.RECORD_AUDIO);add(Manifest.permission.ACCESS_COARSE_LOCATION);add(Manifest.permission.ACCESS_FINE_LOCATION);if(Build.VERSION.SDK_INT>=33)add(Manifest.permission.POST_NOTIFICATIONS)}
         val missing=perms.filter{ContextCompat.checkSelfPermission(this,it)!=PackageManager.PERMISSION_GRANTED}
         if(missing.isEmpty())startWebRtcService() else permissionLauncher.launch(missing.toTypedArray())
     }
