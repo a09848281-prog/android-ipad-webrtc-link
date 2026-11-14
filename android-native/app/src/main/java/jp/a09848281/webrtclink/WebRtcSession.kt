@@ -9,6 +9,7 @@ import java.net.URL
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -42,6 +43,8 @@ class WebRtcSession(
     @Volatile private var remoteDescriptionReady = false
     @Volatile private var pollRunning = false
     @Volatile private var currentStage = "RTC-00: 起動待ち"
+    @Volatile private var reconnectAttempts = 0
+    @Volatile private var reconnectFuture: ScheduledFuture<*>? = null
 
     private fun stage(message: String) {
         currentStage = message
@@ -134,10 +137,21 @@ class WebRtcSession(
         override fun onSignalingChange(state: PeerConnection.SignalingState) { report("シグナリング: $state") }
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
             report(when (state) {
-                PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> "P2P接続成功！"
+                PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> {
+                    reconnectAttempts = 0
+                    reconnectFuture?.cancel(false)
+                    reconnectFuture = null
+                    "P2P接続成功！"
+                }
                 PeerConnection.IceConnectionState.CHECKING -> "通信経路を確認中…"
-                PeerConnection.IceConnectionState.FAILED -> "P2P接続失敗。ネットワークによってはTURNが必要です。"
-                PeerConnection.IceConnectionState.DISCONNECTED -> "通信が一時切断されました"
+                PeerConnection.IceConnectionState.FAILED -> {
+                    scheduleIceRestart(2)
+                    "P2P再接続を開始します…"
+                }
+                PeerConnection.IceConnectionState.DISCONNECTED -> {
+                    scheduleIceRestart(4)
+                    "通信が一時切断されました。再接続を試しています…"
+                }
                 else -> "ICE: $state"
             })
         }
@@ -226,6 +240,7 @@ class WebRtcSession(
                     override fun onCreateFailure(error: String) = fail(error)
                 }, description)
             }
+            "camera_switch" -> switchCamera()
             "candidate" -> {
                 val payload = message.optJSONObject("payload") ?: return
                 val candidate = IceCandidate(payload.optString("sdpMid", "0"),
@@ -234,6 +249,58 @@ class WebRtcSession(
                 else synchronized(pendingCandidates) { pendingCandidates.add(candidate) }
             }
         }
+    }
+
+    private fun switchCamera() {
+        val activeCapturer = capturer
+        if (activeCapturer == null || closed.get()) {
+            sendSignal("camera_switch_result", JSONObject().put("ok", false).put("error", "カメラが起動していません"))
+            return
+        }
+        activeCapturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+            override fun onCameraSwitchDone(isFrontCamera: Boolean) {
+                sendSignal("camera_switch_result", JSONObject().put("ok", true).put("facing", if (isFrontCamera) "user" else "environment"))
+                report(if (isFrontCamera) "前面カメラに切り替えました" else "背面カメラに切り替えました")
+            }
+            override fun onCameraSwitchError(errorDescription: String) {
+                sendSignal("camera_switch_result", JSONObject().put("ok", false).put("error", errorDescription))
+                report("カメラ切り替え失敗: $errorDescription")
+            }
+        })
+    }
+
+    private fun scheduleIceRestart(delaySeconds: Long) {
+        if (closed.get() || reconnectFuture != null) return
+        reconnectFuture = network.schedule({
+            reconnectFuture = null
+            if (closed.get()) return@schedule
+            val p = peer ?: return@schedule
+            val iceState = p.iceConnectionState()
+            if (iceState == PeerConnection.IceConnectionState.CONNECTED || iceState == PeerConnection.IceConnectionState.COMPLETED) return@schedule
+            if (p.signalingState() != PeerConnection.SignalingState.STABLE) {
+                scheduleIceRestart(3)
+                return@schedule
+            }
+            reconnectAttempts += 1
+            val constraints = MediaConstraints().apply { mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true")) }
+            p.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(description: SessionDescription) {
+                    p.setLocalDescription(object : SdpObserver {
+                        override fun onSetSuccess() {
+                            sendSignal("offer", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description))
+                            report("自動再接続Offerを送信しました（試行 $reconnectAttempts）")
+                            scheduleIceRestart(minOf(30L, 5L * reconnectAttempts.coerceAtLeast(1)))
+                        }
+                        override fun onSetFailure(error: String) { fail("再接続Offer設定失敗: $error"); scheduleIceRestart(5) }
+                        override fun onCreateSuccess(description: SessionDescription) {}
+                        override fun onCreateFailure(error: String) {}
+                    }, description)
+                }
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(error: String) { fail("再接続Offer作成失敗: $error"); scheduleIceRestart(5) }
+                override fun onSetFailure(error: String) {}
+            }, constraints)
+        }, delaySeconds, TimeUnit.SECONDS)
     }
 
     private fun sendSignal(type: String, payload: JSONObject) {
@@ -263,6 +330,8 @@ class WebRtcSession(
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return
+        reconnectFuture?.cancel(false)
+        reconnectFuture = null
         Thread({
             try { network.shutdownNow() } catch (_: Throwable) {}
             try { sender.shutdownNow() } catch (_: Throwable) {}
