@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - android-native-stable-v1
+      - feature/full-webrtc-controls-v2
     paths:
       - "android-native/**"
       - ".github/workflows/android-native-build.yml"
