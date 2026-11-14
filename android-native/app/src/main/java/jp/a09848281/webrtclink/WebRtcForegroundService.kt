@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.location.LocationManager
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
@@ -109,7 +110,9 @@ class WebRtcForegroundService : Service() {
             val hasLocationPermission =
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            if (media && hasLocationPermission) {
+            val locationEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+                (getSystemService(LOCATION_SERVICE) as LocationManager).isLocationEnabled
+            if (media && hasLocationPermission && locationEnabled) {
                 type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }
             startForeground(NOTIFICATION_ID, notification, type)
