@@ -194,7 +194,7 @@
   function videoTrack(){return localStream?localStream.getVideoTracks()[0]||null:null;}
   function updateCameraCapabilities(){
     const track=videoTrack();if(!track)return;
-    const caps=track.getCapabilities?track.getCapabilities():{},zoom=caps.zoom;
+    let caps={};try{caps=track.getCapabilities?track.getCapabilities():{};}catch(_){caps={};}const zoom=caps.zoom;
     if(zoom){els.zoomRange.min=String(zoom.min);els.zoomRange.max=String(zoom.max);els.zoomRange.step=String(zoom.step||0.1);els.zoomRange.value=String(Math.max(zoom.min,Math.min(zoom.max,1)));els.zoomRange.disabled=false;els.zoomValue.textContent=els.zoomRange.value+"x";}
     else{els.zoomRange.disabled=true;els.zoomValue.textContent="非対応";}
     els.torchToggle.disabled=caps.torch!==true;els.torchToggle.checked=false;
@@ -244,7 +244,7 @@
   async function startAndroid(){
     if(!validGas()) throw new Error("先に正しいGAS WebアプリURL（/exec）を保存してください。");
     els.startHost.disabled=true; log("Androidのカメラ・マイクを起動しています…");
-    cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:1280},height:{ideal:720}}});
+    cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:Number(els.resolutionSelect.value.split("x")[0])},height:{ideal:Number(els.resolutionSelect.value.split("x")[1])},frameRate:{ideal:Number(els.fpsSelect.value)}}});
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
