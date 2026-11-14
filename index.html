@@ -32,6 +32,28 @@
 
     <section class="panel">
       <h2>② 端末を選択</h2>
+      <div class="device-manager">
+        <h3>🔐 登録済みAndroid端末</h3>
+        <label for="pairCodeInput">Androidアプリに表示された8桁ペアリングコード</label>
+        <div class="actions">
+          <input id="pairCodeInput" type="text" inputmode="numeric" maxlength="8" placeholder="8桁コード">
+          <button id="registerDevice" class="secondary" type="button">端末登録</button>
+        </div>
+        <label for="registeredDeviceSelect">接続する登録端末</label>
+        <select id="registeredDeviceSelect" class="device-select"><option value="">端末を登録してください</option></select>
+        <p id="registeredDeviceStatus" class="hint">端末の状態はまだ確認していません。</p>
+        <div class="actions">
+          <button id="refreshDeviceStatus" class="secondary" type="button" disabled>状態を更新</button>
+          <button id="connectRegisteredDevice" class="primary" type="button" disabled>Androidに接続</button>
+        </div>
+        <div class="actions">
+          <button id="renameDevice" class="tiny" type="button" disabled>名前変更</button>
+          <button id="favoriteDevice" class="tiny" type="button" disabled>☆ お気に入り</button>
+          <button id="removeDevice" class="tiny danger" type="button" disabled>登録解除</button>
+          <button id="viewDeviceHistory" class="tiny" type="button" disabled>接続履歴</button>
+        </div>
+        <p id="deviceManagerStatus" class="hint">ペアリングコードは5分間有効・1回限りです。登録情報はこのiPadのブラウザ内に保存します。</p>
+      </div>
       <div class="role-grid">
         <button id="hostMode" class="role active" type="button"><span>📱</span><b>Android側</b><small>カメラ・マイクを送信</small></button>
         <button id="viewerMode" class="role" type="button"><span>🍎</span><b>iPad側</b><small>映像受信・PTT送信</small></button>
@@ -52,24 +74,63 @@
     </section>
 
     <section class="panel">
+      <h2>🔎 接続前チェック</h2>
+      <button id="runDiagnostics" class="secondary full" type="button">通信・WebRTCを診断</button>
+      <p id="diagnosticResult" class="hint" role="status">接続前にブラウザ、GAS、STUN通信を確認できます。カメラ・マイクは起動しません。</p>
+    </section>
+
+    <section class="panel">
       <div class="section-title"><h2>③ 通信画面</h2><span id="connectionState" class="state">未接続</span></div>
+      <div id="devicePresence" class="device-presence" role="status">📱 Android端末：状態不明</div>
       <div class="video-wrap">
         <video id="remoteVideo" autoplay playsinline controls></video>
-        <div id="videoPlaceholder" class="placeholder"><span>📡</span><b>映像待機中</b><small>接続するとAndroid側の映像が表示されます</small></div>
+        <div id="videoPlaceholder" class="placeholder"><span>📡</span><b>映像待機中</b><small>接続するとAndroid側の映像がここに表示されます</small></div>
       </div>
       <div class="video-labels"><span>相手側の映像</span><span id="mediaState">映像・音声：未受信</span></div>
+      <div class="location-panel">
+        <h3>📍 Androidの位置情報（要求したときだけ）</h3>
+        <button id="requestLocation" class="secondary full" type="button" disabled>📍 位置情報を見る</button>
+        <p id="locationStatus" class="hint" role="status">接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。</p>
+        <div id="locationResult" class="location-result hidden"></div>
+      </div>
       <div class="ptt-area">
         <button id="pttButton" class="ptt" disabled>🎙️ 押している間だけ話す</button>
         <p class="hint">iPad側で接続後に使用できます。ボタンを離すとマイクがミュートになります。</p>
       </div>
+      <div class="media-controls">
+        <h3>🎛️ メディア操作</h3>
+        <div class="actions"><button id="micToggle" class="secondary" disabled>🎙️ マイクをミュート</button><button id="videoToggle" class="secondary" disabled>📷 映像を停止</button></div>
+        <label for="remoteVolume">🔊 相手の音量</label>
+        <input id="remoteVolume" type="range" min="0" max="1" step="0.05" value="1" disabled>
+        <p class="hint">音量調整はこの端末で再生する相手の音声に適用されます。</p>
+      </div>
       <div class="local-preview">
         <video id="localVideo" autoplay playsinline muted></video>
-        <span>この端末のカメラ（Android側のみ）</span>
+        <div class="preview-actions"><span>この端末のカメラ（Android側のみ）</span><button id="cameraSwitch" class="tiny" type="button" disabled>🔄 前後カメラ切替</button></div>
+      <div class="camera-controls">
+        <h3>📷 Androidカメラ設定</h3>
+        <div class="camera-setting"><label for="resolutionSelect">解像度</label><select id="resolutionSelect" disabled><option value="640x360">360p</option><option value="1280x720" selected>720p</option><option value="1920x1080">1080p</option></select></div>
+        <div class="camera-setting"><label for="fpsSelect">フレームレート</label><select id="fpsSelect" disabled><option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30" selected>30 FPS</option></select></div>
+        <div class="camera-setting"><label for="zoomRange">ズーム <span id="zoomValue">対応端末のみ</span></label><input id="zoomRange" type="range" min="1" max="1" step="0.1" value="1" disabled></div>
+        <label class="camera-setting"><input id="torchToggle" type="checkbox" disabled> 🔦 ライト（対応端末のみ）</label>
+        <label class="camera-setting"><input id="adaptiveToggle" type="checkbox" checked disabled> 📶 通信状況に合わせて画質を調整</label>
+        <p class="hint">対応状況はAndroid端末によって異なります。画質変更が反映されない場合は接続ログを確認してください。</p>
+      </div>
       </div>
     </section>
 
     <section class="panel">
-      <h2>④ 操作</h2>
+      <h2>④ 通信状態</h2>
+      <div class="stats-grid">
+        <div>接続時間<strong id="duration">--:--</strong></div>
+        <div>RTT<strong id="rtt">—</strong></div>
+        <div>受信速度<strong id="bitrate">—</strong></div>
+        <div>パケット損失<strong id="packetLoss">—</strong></div>
+      </div>
+      <p class="hint">統計値は接続中にブラウザが取得できる範囲で表示します。</p>
+    </section>
+    <section class="panel">
+      <h2>⑤ 操作</h2>
       <button id="disconnect" class="danger full" disabled>切断する</button>
       <p id="log" class="log" role="status" aria-live="polite">GAS URLを設定してください。</p>
     </section>
