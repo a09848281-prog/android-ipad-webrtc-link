@@ -43,67 +43,51 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(11,18,32)
-        window.navigationBarColor = Color.rgb(11,18,32)
+        window.statusBarColor = Color.rgb(8,14,25)
+        window.navigationBarColor = Color.rgb(8,14,25)
+        val prefs = getSharedPreferences("webrtc_link", MODE_PRIVATE)
         gasUrlInput = EditText(this).apply {
-            hint = "https://script.google.com/macros/s/.../exec"; setSingleLine(true); textSize = 13f
-            setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
-            setText(getSharedPreferences("webrtc_link", MODE_PRIVATE).getString("gas_url", ""))
+            hint = "https://script.google.com/macros/s/.../exec"
+            setSingleLine(true); textSize = 12f; setTextColor(Color.WHITE); setHintTextColor(Color.LTGRAY)
+            setText(prefs.getString("gas_url", ""))
         }
-        roomCodeView = TextView(this).apply { text = "------"; textSize = 34f; gravity = Gravity.CENTER; setTextColor(Color.rgb(145,190,255)); setPadding(0,12,0,12) }
-        pairingCodeView = makeText("ペアリングコード：未発行", 13f)
-        status = makeText("最初にiPadとペアリングしてください。", 13f)
-        pairButton = makeButton("🔐  iPadとペアリング", true) { issuePairingCode() }
-        startButton = makeButton("▶  待機を開始", true) { requestMediaPermissions() }
-        val stop = makeButton("■  待機・通信を停止", false) {
-            startService(Intent(this, WebRtcForegroundService::class.java).setAction(WebRtcForegroundService.ACTION_STOP))
-            webRtcStarted = false; startButton.isEnabled = true; startButton.text = "▶  待機を開始"; roomCodeView.text = "------"
-            showStatus("待機を停止しました。", false)
+        roomCodeView = TextView(this).apply {
+            text = "------"; textSize = 38f; gravity = Gravity.CENTER
+            setTextColor(Color.rgb(145,190,255)); letterSpacing = 0.18f; setPadding(0,18,0,18)
         }
-        val location = makeButton("📍  位置情報の許可を設定", false) {
-            val perms = arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
-            val missing = perms.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
-            if (missing.isEmpty()) showStatus("許可済みです。取得はiPadから要求されたときだけです。", false) else locationPermissionLauncher.launch(missing.toTypedArray())
-        }
-        val controls = card().apply {
-            addView(makeText("通信中の操作", 17f))
-            addView(makeButton("🎙️  マイクをミュート／解除", false) {
-                microphoneEnabled = !microphoneEnabled
-                sendMediaAction(WebRtcForegroundService.ACTION_TOGGLE_MIC, WebRtcForegroundService.EXTRA_ENABLED, microphoneEnabled)
-                showStatus(if (microphoneEnabled) "マイク：ON" else "マイク：ミュート", false)
-            })
-            addView(makeButton("📷  カメラ映像を停止／再開", false) {
-                cameraEnabled = !cameraEnabled
-                sendMediaAction(WebRtcForegroundService.ACTION_TOGGLE_VIDEO, WebRtcForegroundService.EXTRA_ENABLED, cameraEnabled)
-                showStatus(if (cameraEnabled) "カメラ：ON" else "カメラ：停止", false)
-            })
-            addView(makeButton("🔄  前後カメラを切り替え", false) { sendMediaAction(WebRtcForegroundService.ACTION_SWITCH_CAMERA) })
-            addView(makeText("画質設定", 14f))
-            addView(makeButton("軽量　360p / 15fps", false) { setCameraProfile(640,360,15) })
-            addView(makeButton("標準　720p / 24fps", false) { setCameraProfile(1280,720,24) })
-            addView(makeButton("高画質　1080p / 30fps", false) { setCameraProfile(1920,1080,30) })
-        }
+        pairingCodeView = makeText("--------", 30f).apply { gravity = Gravity.CENTER; setTextColor(Color.rgb(145,190,255)); letterSpacing = 0.14f }
+        status = makeText("ペアリングコードを発行してください。", 12f)
+        pairButton = makeButton("ペアリングコードを発行", true) { issuePairingCode() }
+        startButton = makeButton("通話コードを発行して待機", true) { requestMediaPermissions() }
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(16,22,16,24); setBackgroundColor(Color.rgb(11,18,32))
-            addView(makeText("WebRTC Link", 27f))
-            addView(makeText("Android  ⇄  iPad", 13f))
+            orientation = LinearLayout.VERTICAL
+            setPadding(22,28,22,30)
+            setBackgroundColor(Color.rgb(8,14,25))
+            addView(makeText("WebRTC Link", 25f))
+            addView(makeText("ANDROID DEVICE", 10f).apply { setTextColor(Color.rgb(120,151,195)); letterSpacing = 0.18f })
+            val savedUrl = prefs.getString("gas_url", "").orEmpty()
+            if (savedUrl.isBlank()) {
+                addView(card().apply {
+                    addView(makeText("初回設定：GAS WebアプリURL", 13f))
+                    addView(gasUrlInput)
+                }, margin())
+            }
             addView(card().apply {
-                addView(makeText("接続の準備", 17f)); addView(makeText("GAS WebアプリURL", 12f)); addView(gasUrlInput)
-                addView(pairButton); addView(pairingCodeView)
+                addView(makeText("PAIRING CODE", 11f).apply { setTextColor(Color.rgb(145,170,205)); letterSpacing = 0.16f })
+                addView(pairingCodeView)
+                addView(makeText("iPad側の「端末登録」に入力してください。5分間有効・1回限り。", 11f))
+                addView(pairButton)
             }, margin())
             addView(card().apply {
-                addView(makeText("接続待機", 17f))
-                addView(makeText("① ペアリング　② 待機を開始　③ iPadから接続", 12f))
-                addView(roomCodeView); addView(startButton); addView(stop)
+                addView(makeText("CALL CODE", 11f).apply { setTextColor(Color.rgb(145,170,205)); letterSpacing = 0.16f })
+                addView(roomCodeView)
+                addView(makeText("iPadから接続すると通話が開始されます。", 11f))
+                addView(startButton)
             }, margin())
-            addView(controls, margin())
             addView(card().apply {
-                addView(makeText("位置情報", 17f))
-                addView(makeText("自動取得しません。iPadから要求されたときだけ1回取得します。", 12f))
-                addView(location)
+                addView(makeText("接続状態", 14f))
+                addView(status)
             }, margin())
-            addView(card().apply { addView(makeText("状態",17f)); addView(status) }, margin())
-            addView(makeText("ロック画面での待機は、通信中の常駐通知が表示されている間に利用できます。省電力設定やOSによる終了時は継続できない場合があります。", 11f))
         }
         setContentView(ScrollView(this).apply { addView(root) })
     }
