@@ -19,8 +19,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: webrtc-link-${{ github.ref }}
-  cancel-in-progress: true
+  group: webrtc-link-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
