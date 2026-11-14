@@ -204,8 +204,8 @@
     if(role!=="android"||!localStream||!pc||!started)return;
     els.cameraSwitch.disabled=true;
     const next=cameraFacing==="environment"?"user":"environment";
+    let replacement=null;
     try{
-      let replacement;
       try{replacement=await getMedia({audio:false,video:{facingMode:{ideal:next},width:{ideal:1280},height:{ideal:720}}});}
       catch(firstError){throw new Error("切替先カメラを起動できません: "+firstError.message);}
       const newTrack=replacement.getVideoTracks()[0];
@@ -219,7 +219,7 @@
       els.localVideo.srcObject=localStream;
       cameraFacing=next;
       log(next==="user"?"前面カメラに切り替えました。":"背面カメラに切り替えました。");
-    }catch(error){log("カメラ切替に失敗しました: "+error.message);}
+    }catch(error){if(replacement)replacement.getTracks().forEach(track=>track.stop());log("カメラ切替に失敗しました: "+error.message);}
     finally{els.cameraSwitch.disabled=false;}
   });
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
