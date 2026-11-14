@@ -22,6 +22,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Android host-side WebRTC session.
@@ -439,10 +440,11 @@ class WebRtcSession(
             }
             report("iPadからの要求を受信：位置情報を1回だけ取得しています…")
             val completed = AtomicBoolean(false)
-            val cancellation = CancellationSignal()
+            val cancellations = providers.map { CancellationSignal() }
+            val pendingProviders = AtomicInteger(providers.size)
             val timeout = locationScheduler.schedule({
                 if (completed.compareAndSet(false, true)) {
-                    try { cancellation.cancel() } catch (_: Throwable) {}
+                    cancellations.forEach { try { it.cancel() } catch (_: Throwable) {} }
                     sendSignal("location_error", JSONObject().put("reason", "位置情報の取得が40秒でタイムアウトしました。GPS・Wi-Fi・位置情報設定を確認してください"))
                 }
             }, 40, TimeUnit.SECONDS)
@@ -450,6 +452,7 @@ class WebRtcSession(
             fun deliver(location: Location, source: String) {
                 if (!completed.compareAndSet(false, true)) return
                 timeout.cancel(false)
+                cancellations.forEach { try { it.cancel() } catch (_: Throwable) {} }
                 val payload = JSONObject()
                     .put("latitude", location.latitude)
                     .put("longitude", location.longitude)
@@ -458,6 +461,13 @@ class WebRtcSession(
                     .put("source", source)
                 sendSignal("location_result", payload)
                 report("位置情報をiPadへ送信しました（精度 " + location.accuracy.toInt() + "m）")
+            }
+
+            fun providerFailed() {
+                if (pendingProviders.decrementAndGet() == 0 && completed.compareAndSet(false, true)) {
+                    timeout.cancel(false)
+                    sendSignal("location_error", JSONObject().put("reason", "GPS・ネットワークの両方から現在地を取得できませんでした。屋外またはWi-Fi接続で再試行してください"))
+                }
             }
 
             try {
@@ -470,34 +480,22 @@ class WebRtcSession(
                     return@execute
                 }
 
-                fun requestProvider(index: Int) {
-                    if (completed.get() || closed.get()) return
-                    if (index >= providers.size) {
-                        if (completed.compareAndSet(false, true)) {
-                            timeout.cancel(false)
-                            sendSignal("location_error", JSONObject().put("reason", "GPS・ネットワークの両方から現在地を取得できませんでした。屋外またはWi-Fi接続で再試行してください"))
-                        }
-                        return
-                    }
-                    val provider = providers[index]
+                // Request NETWORK and GPS in parallel; whichever returns first wins.
+                providers.forEachIndexed { index, provider ->
                     try {
-                        manager.getCurrentLocation(provider, cancellation, locationExecutor) { location: Location? ->
-                            if (location != null) deliver(location, provider) else requestProvider(index + 1)
+                        manager.getCurrentLocation(provider, cancellations[index], locationExecutor) { location: Location? ->
+                            if (location != null) deliver(location, provider) else providerFailed()
                         }
                     } catch (security: SecurityException) {
-                        if (index + 1 < providers.size) requestProvider(index + 1)
-                        else if (completed.compareAndSet(false, true)) {
-                            timeout.cancel(false)
-                            sendSignal("location_denied", JSONObject().put("reason", "位置情報の権限がありません"))
-                        }
+                        providerFailed()
                     } catch (error: Throwable) {
-                        requestProvider(index + 1)
+                        providerFailed()
                     }
                 }
-                requestProvider(0)
             } catch (error: Throwable) {
                 if (completed.compareAndSet(false, true)) {
                     timeout.cancel(false)
+                    cancellations.forEach { try { it.cancel() } catch (_: Throwable) {} }
                     sendSignal("location_error", JSONObject().put("reason", error.message ?: "位置情報取得エラー"))
                 }
             }
