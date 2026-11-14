@@ -6,13 +6,13 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
-  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false;
+  let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high";
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -103,6 +103,7 @@
         });
         document.getElementById("rtt").textContent=rtt==null?"—":Math.round(rtt)+" ms";
         document.getElementById("packetLoss").textContent=(lost+received)?(100*lost/(lost+received)).toFixed(1)+"%":"—";
+        adaptQuality(rtt==null?0:rtt,lost+received===0?0:lost/(lost+received)*100);
         if(bytes!=null&&previousBytes!=null&&previousAt)document.getElementById("bitrate").textContent=Math.max(0,(bytes-previousBytes)*8/((now-previousAt)/1000)/1000).toFixed(0)+" kbps";
         if(bytes!=null){previousBytes=bytes;previousAt=now;}
       }catch(_){}
@@ -171,6 +172,52 @@
     }catch(error){reconnecting=false;throw error;}
   }
 
+  function videoTrack(){return localStream?localStream.getVideoTracks()[0]||null:null;}
+  function updateCameraCapabilities(){
+    const track=videoTrack();if(!track)return;
+    const caps=track.getCapabilities?track.getCapabilities():{},zoom=caps.zoom;
+    if(zoom){els.zoomRange.min=String(zoom.min);els.zoomRange.max=String(zoom.max);els.zoomRange.step=String(zoom.step||0.1);els.zoomRange.value=String(Math.max(zoom.min,Math.min(zoom.max,1)));els.zoomRange.disabled=false;els.zoomValue.textContent=els.zoomRange.value+"x";}
+    else{els.zoomRange.disabled=true;els.zoomValue.textContent="非対応";}
+    els.torchToggle.disabled=caps.torch!==true;els.torchToggle.checked=false;
+    els.resolutionSelect.disabled=false;els.fpsSelect.disabled=false;els.adaptiveToggle.disabled=false;
+  }
+  function setCameraControlsEnabled(enabled){
+    [els.resolutionSelect,els.fpsSelect,els.adaptiveToggle].forEach(el=>el.disabled=!enabled);
+    if(!enabled){els.zoomRange.disabled=true;els.torchToggle.disabled=true;els.torchToggle.checked=false;}
+    else updateCameraCapabilities();
+  }
+  async function applyCameraProfile(){
+    const track=videoTrack();if(!track||!started)return;
+    const [width,height]=els.resolutionSelect.value.split("x").map(Number),fps=Number(els.fpsSelect.value);
+    try{await track.applyConstraints({width:{ideal:width},height:{ideal:height},frameRate:{ideal:fps,max:fps}});log("カメラ設定を適用しました（実際の値は端末により異なります）。");}
+    catch(error){log("選択した画質はこの端末で利用できません: "+error.message);}
+    updateSenderBitrate();
+  }
+  async function updateSenderBitrate(level){
+    if(!pc)return;const sender=pc.getSenders().find(item=>item.track&&item.track.kind==="video");
+    if(!sender||!sender.getParameters||!sender.setParameters)return;
+    try{const params=sender.getParameters();if(!params.encodings||!params.encodings.length)return;
+      const selected=level||(els.adaptiveToggle.checked?adaptiveLastLevel:"high");
+      params.encodings[0].maxBitrate=selected==="low"?350000:selected==="medium"?900000:2500000;
+      await sender.setParameters(params);
+    }catch(error){console.warn("bitrate adjustment unavailable",error);}
+  }
+  async function applyZoom(){
+    const track=videoTrack();if(!track)return;
+    try{await track.applyConstraints({advanced:[{zoom:Number(els.zoomRange.value)}]});els.zoomValue.textContent=els.zoomRange.value+"x";}
+    catch(error){log("ズームを適用できません: "+error.message);}
+  }
+  async function applyTorch(){
+    const track=videoTrack();if(!track)return;
+    try{await track.applyConstraints({advanced:[{torch:els.torchToggle.checked}]});}
+    catch(error){els.torchToggle.checked=false;log("ライト機能はこのカメラで利用できません: "+error.message);}
+  }
+  function adaptQuality(rtt,loss){
+    if(!els.adaptiveToggle.checked)return;
+    const level=(loss>8||rtt>500)?"low":(loss>3||rtt>250)?"medium":"high";
+    if(level!==adaptiveLastLevel){adaptiveLastLevel=level;updateSenderBitrate(level);log("通信状況に合わせて送信ビットレートを"+({low:"低",medium:"中",high:"高"}[level])+"に調整しました。");}
+  }
+
   async function getMedia(constraints){
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("このブラウザではカメラ・マイクを利用できません。HTTPSのページで開いてください。");
     return navigator.mediaDevices.getUserMedia(constraints);
@@ -182,7 +229,7 @@
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setState("接続待機中","wait");startPolling();
+    started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setCameraControlsEnabled(true);setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
@@ -212,7 +259,7 @@
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
     els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
-    els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;els.roomCode.textContent="------";els.copyCode.disabled=true;
+    els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;setCameraControlsEnabled(false);els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log(reason);
   }
   function pttDown(e){if(role!=="ipad"||!pttTrack||!started)return;e.preventDefault();pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 送信中…（離すとミュート）";}
@@ -252,7 +299,7 @@
     const next=cameraFacing==="environment"?"user":"environment";
     let replacement=null;
     try{
-      try{replacement=await getMedia({audio:false,video:{facingMode:{ideal:next},width:{ideal:1280},height:{ideal:720}}});}
+      try{replacement=await getMedia({audio:false,video:{facingMode:{ideal:next},width:{ideal:Number(els.resolutionSelect.value.split("x")[0])},height:{ideal:Number(els.resolutionSelect.value.split("x")[1])},frameRate:{ideal:Number(els.fpsSelect.value)}}});}
       catch(firstError){throw new Error("切替先カメラを起動できません: "+firstError.message);}
       const newTrack=replacement.getVideoTracks()[0];
       if(!newTrack)throw new Error("切替先カメラの映像トラックを取得できませんでした。");
@@ -264,10 +311,16 @@
       localStream.addTrack(newTrack);
       els.localVideo.srcObject=localStream;
       cameraFacing=next;
+      updateCameraCapabilities();
       log(next==="user"?"前面カメラに切り替えました。":"背面カメラに切り替えました。");
     }catch(error){if(replacement)replacement.getTracks().forEach(track=>track.stop());log("カメラ切替に失敗しました: "+error.message);}
     finally{els.cameraSwitch.disabled=false;}
   });
+  els.resolutionSelect.addEventListener("change",applyCameraProfile);
+  els.fpsSelect.addEventListener("change",applyCameraProfile);
+  els.zoomRange.addEventListener("input",applyZoom);
+  els.torchToggle.addEventListener("change",applyTorch);
+  els.adaptiveToggle.addEventListener("change",()=>{adaptiveLastLevel="high";updateSenderBitrate();log(els.adaptiveToggle.checked?"自動画質調整を有効にしました。":"自動画質調整を停止しました。");});
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
