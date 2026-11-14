@@ -436,7 +436,7 @@ class WebRtcSession(
             val timeout = network.schedule({
                 cancellation.cancel()
                 if (!closed.get()) sendSignal("location_error", JSONObject().put("reason", "位置情報取得がタイムアウトしました"))
-            }, 15, TimeUnit.SECONDS)
+            }, 25, TimeUnit.SECONDS)
             manager.getCurrentLocation(provider, cancellation, network) { location: Location? ->
                 timeout.cancel(false)
                 if (closed.get()) return@getCurrentLocation
