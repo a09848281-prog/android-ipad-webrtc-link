@@ -62,6 +62,13 @@
         <button id="pttButton" class="ptt" disabled>🎙️ 押している間だけ話す</button>
         <p class="hint">iPad側で接続後に使用できます。ボタンを離すとマイクがミュートになります。</p>
       </div>
+      <div class="media-controls">
+        <h3>🎛️ メディア操作</h3>
+        <div class="actions"><button id="micToggle" class="secondary" disabled>🎙️ マイクをミュート</button><button id="videoToggle" class="secondary" disabled>📷 映像を停止</button></div>
+        <label for="remoteVolume">🔊 相手の音量</label>
+        <input id="remoteVolume" type="range" min="0" max="1" step="0.05" value="1" disabled>
+        <p class="hint">音量調整はこの端末で再生する相手の音声に適用されます。</p>
+      </div>
       <div class="local-preview">
         <video id="localVideo" autoplay playsinline muted></video>
         <span>この端末のカメラ（Android側のみ）</span>
