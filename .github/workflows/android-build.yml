@@ -1,0 +1,61 @@
+name: Android APK build and PWA syntax check
+
+on:
+  push:
+    branches:
+      - feature/stable-lock-camera-reconnect-v1
+  pull_request:
+    branches:
+      - feature/ptt-location-session-v5
+    paths:
+      - 'app.js'
+      - 'index.html'
+      - 'style.css'
+      - 'android-native/**'
+      - '.github/workflows/android-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check PWA JavaScript syntax
+        run: node --check app.js
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 platform and build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle -p android-native :app:assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebRTC-Link-debug-APK
+          path: android-native/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
