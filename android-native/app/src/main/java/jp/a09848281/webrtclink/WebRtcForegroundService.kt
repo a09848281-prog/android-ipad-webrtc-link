@@ -28,7 +28,8 @@ class WebRtcForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             val activeSession = webRtcSession
-            if (activeSession != null) activeSession.disconnect { stopSelf() } else stopSelf()
+            if (activeSession != null) activeSession.disconnect { clearPersistedSession(); stopSelf() }
+            else { clearPersistedSession(); stopSelf() }
             return START_NOT_STICKY
         }
 
@@ -52,7 +53,7 @@ class WebRtcForegroundService : Service() {
                 return START_NOT_STICKY
             }
 
-            if (action != ACTION_START_WEBRTC) {
+            if (action != ACTION_START_WEBRTC && action != null) {
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -65,14 +66,16 @@ class WebRtcForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        val gasUrl = intent.getStringExtra(EXTRA_GAS_URL).orEmpty()
-        val room = intent.getStringExtra(EXTRA_ROOM).orEmpty()
-        val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID).orEmpty()
-        val authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN).orEmpty()
+        val prefs = getSharedPreferences("webrtc_link", MODE_PRIVATE)
+        val gasUrl = intent?.getStringExtra(EXTRA_GAS_URL) ?: prefs.getString("active_gas_url", "").orEmpty()
+        val room = intent?.getStringExtra(EXTRA_ROOM) ?: prefs.getString("active_room", "").orEmpty()
+        val deviceId = intent?.getStringExtra(EXTRA_DEVICE_ID) ?: prefs.getString("active_device_id", "").orEmpty()
+        val authToken = intent?.getStringExtra(EXTRA_AUTH_TOKEN) ?: prefs.getString("active_auth_token", "").orEmpty()
         if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
             !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}")) ||
             !deviceId.matches(Regex("[A-Za-z0-9_-]{16,80}")) || !authToken.matches(Regex("[A-Za-z0-9_-]{40,100}"))) {
             updateNotification("設定エラー：GAS URLまたは接続コード")
+            clearPersistedSession()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -80,9 +83,16 @@ class WebRtcForegroundService : Service() {
         webRtcSession?.close()
         webRtcSession = WebRtcSession(applicationContext, gasUrl, room, deviceId, authToken) { message ->
             updateNotification(message)
-            if (message == "相手側が切断しました。") stopSelf()
+            if (message == "相手側が切断しました。") { clearPersistedSession(); stopSelf() }
         }.also { it.start() }
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    private fun clearPersistedSession() {
+        getSharedPreferences("webrtc_link", MODE_PRIVATE).edit()
+            .putBoolean("active_session", false)
+            .remove("active_gas_url").remove("active_room")
+            .remove("active_device_id").remove("active_auth_token").apply()
     }
 
     private fun startForegroundCompat(notification: Notification, media: Boolean) {
