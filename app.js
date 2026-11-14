@@ -6,13 +6,62 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),deviceManagerStatus:$("deviceManagerStatus")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
   let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high",locationTimeout=null,deviceStatusTimer=null;
+  let registeredDevices=loadRegisteredDevices(),activeDevice=null,authDeviceId="",authToken="";
+
+  function loadRegisteredDevices(){
+    try{const data=JSON.parse(localStorage.getItem("webrtcRegisteredDevices")||"[]");return Array.isArray(data)?data.filter(x=>x&&typeof x.deviceId==="string"&&typeof x.authToken==="string"):[];}
+    catch(_){return [];}
+  }
+  function saveRegisteredDevices(){localStorage.setItem("webrtcRegisteredDevices",JSON.stringify(registeredDevices));}
+  function renderRegisteredDevices(){
+    const select=els.registeredDeviceSelect;if(!select)return;
+    select.replaceChildren();
+    if(!registeredDevices.length){const option=document.createElement("option");option.value="";option.textContent="端末を登録してください";select.appendChild(option);}
+    registeredDevices.forEach(device=>{
+      const option=document.createElement("option");option.value=device.deviceId;
+      option.textContent=(device.favorite?"★ ":"")+(device.nickname||device.label||"Android端末");
+      select.appendChild(option);
+    });
+    const selected=registeredDevices.find(d=>d.deviceId===authDeviceId)||registeredDevices[0]||null;
+    if(selected){select.value=selected.deviceId;setActiveDevice(selected);}
+    else{activeDevice=null;authDeviceId="";authToken="";updateDeviceActions();}
+  }
+  function setActiveDevice(device){
+    activeDevice=device||null;authDeviceId=device?device.deviceId:"";authToken=device?device.authToken:"";
+    updateDeviceActions();
+  }
+  function updateDeviceActions(){
+    const enabled=!!activeDevice;
+    [els.renameDevice,els.favoriteDevice,els.removeDevice].forEach(button=>{if(button)button.disabled=!enabled;});
+    if(els.favoriteDevice)els.favoriteDevice.textContent=activeDevice&&activeDevice.favorite?"★ お気に入り解除":"☆ お気に入り";
+  }
+  async function registerPairedDevice(){
+    const code=els.pairCodeInput.value.replace(/\D/g,"");
+    if(!/^\d{8}$/.test(code)){els.deviceManagerStatus.textContent="8桁のペアリングコードを入力してください。";return;}
+    if(!validGas()){els.deviceManagerStatus.textContent="先にGAS /exec URLを保存してください。";return;}
+    els.registerDevice.disabled=true;els.deviceManagerStatus.textContent="ペアリングを確認しています…";
+    const result=await new Promise((resolve,reject)=>{
+      const callback="webrtcPairCallback";const script=document.createElement("script");
+      const timer=setTimeout(()=>{cleanup();reject(new Error("ペアリング応答がタイムアウトしました。"));},10000);
+      function cleanup(){clearTimeout(timer);script.remove();try{delete window[callback];}catch(_){}}
+      window[callback]=(data)=>{cleanup();if(data&&data.ok)resolve(data);else reject(new Error((data&&data.error)||"コードが無効か期限切れです。"));};
+      const url=new URL(normalizeGasUrl());url.searchParams.set("action","pair_complete");url.searchParams.set("code",code);url.searchParams.set("callback",callback);url.searchParams.set("_",String(Date.now()));
+      script.src=url.toString();script.onerror=()=>{cleanup();reject(new Error("GASに接続できませんでした。"));};document.head.appendChild(script);
+    });
+    const existing=registeredDevices.find(d=>d.deviceId===result.deviceId);
+    const device={deviceId:result.deviceId,authToken:result.authToken,label:String(result.label||"Android端末"),nickname:existing?existing.nickname:String(result.label||"Android端末"),favorite:existing?!!existing.favorite:false,addedAt:existing?existing.addedAt:Date.now(),lastConnected:existing?existing.lastConnected:null,history:existing?existing.history||[]:[]};
+    if(existing)registeredDevices=registeredDevices.map(d=>d.deviceId===device.deviceId?device:d);else registeredDevices.push(device);
+    saveRegisteredDevices();setActiveDevice(device);renderRegisteredDevices();els.registeredDeviceSelect.value=device.deviceId;
+    els.deviceManagerStatus.textContent="登録しました："+(device.nickname||device.label)+"。このiPadに認証情報を保存しました。";
+    els.pairCodeInput.value="";
+  }
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
