@@ -75,7 +75,7 @@
     try{
       if(m.type==="device_status" && role==="ipad"){
         const p=m.payload||{};
-        const battery=Number.isFinite(Number(p.batteryPercent))?Math.round(Number(p.batteryPercent))+"%":"不明";
+        const battery=p.batteryPercent!==null&&p.batteryPercent!==undefined&&Number.isFinite(Number(p.batteryPercent))?Math.round(Number(p.batteryPercent))+"%":"不明";
         const label=String(p.deviceLabel||"Android端末").slice(0,60);
         const network=String(p.networkType||"不明").slice(0,30);
         els.devicePresence.textContent="🟢 "+label+"：オンライン / 電池 "+battery+" / "+network;
