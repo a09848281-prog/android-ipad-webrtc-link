@@ -6,7 +6,7 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
@@ -298,6 +298,51 @@
   function pttDown(e){if(role!=="ipad"||!pttTrack||!started)return;e.preventDefault();pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 送信中…（離すとミュート）";}
   function pttUp(){if(pttTrack){pttTrack.enabled=false;els.ptt.classList.remove("active");els.ptt.textContent="🎙️ 押している間だけ話す";}}
 
+  async function runDiagnostics(){
+    const lines=[];
+    const ok=(v)=>v?"OK":"NG";
+    lines.push("HTTPS/安全な接続: "+ok(window.isSecureContext));
+    lines.push("WebRTC API: "+ok(typeof RTCPeerConnection!=="undefined"));
+    lines.push("カメラ・マイクAPI: "+ok(!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)));
+    const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    lines.push("ネットワーク方式: "+(connection?(connection.effectiveType||connection.type||"取得可能"):"ブラウザ非対応"));
+    if(!validGas()) lines.push("GAS URL: 未設定または形式不正");
+    else {
+      const health=await new Promise(resolve=>{
+        const callback="webrtcHealthCallback";
+        const script=document.createElement("script");
+        const timer=setTimeout(()=>{cleanup();resolve(false);},8000);
+        function cleanup(){clearTimeout(timer);script.remove();try{delete window[callback];}catch(_){}}
+        window[callback]=(data)=>{cleanup();resolve(!!(data&&data.ok));};
+        const url=new URL(normalizeGasUrl());url.searchParams.set("action","health");url.searchParams.set("callback",callback);url.searchParams.set("_",String(Date.now()));
+        script.src=url.toString();script.onerror=()=>{cleanup();resolve(false);};document.head.appendChild(script);
+      });
+      lines.push("GAS応答: "+ok(health));
+    }
+    if(typeof RTCPeerConnection!=="undefined"){
+      let testPc=null;
+      try{
+        const candidates=[];
+        testPc=new RTCPeerConnection(ICE);
+        testPc.createDataChannel("connectivity-test");
+        testPc.onicecandidate=(event)=>{if(event.candidate)candidates.push(event.candidate.candidate);};
+        const offer=await testPc.createOffer();await testPc.setLocalDescription(offer);
+        await new Promise(resolve=>{
+          if(testPc.iceGatheringState==="complete"){resolve();return;}
+          const timer=setTimeout(resolve,5000);
+          testPc.onicegatheringstatechange=()=>{if(testPc.iceGatheringState==="complete"){clearTimeout(timer);resolve();}};
+        });
+        const srflx=candidates.some(x=>x.includes(" typ srflx "));
+        const host=candidates.some(x=>x.includes(" typ host "));
+        lines.push("STUN外部経路候補: "+(srflx?"確認できました": "確認できません（制限・タイムアウトの可能性）"));
+        lines.push("ローカル候補: "+ok(host));
+      }catch(error){lines.push("ICE診断: NG ("+error.message+")");}
+      finally{if(testPc)testPc.close();}
+    }
+    els.diagnosticResult.textContent=lines.join("\n");
+  }
+
+  els.runDiagnostics.addEventListener("click",()=>{els.runDiagnostics.disabled=true;els.diagnosticResult.textContent="診断中…";runDiagnostics().catch(e=>{els.diagnosticResult.textContent="診断エラー: "+e.message;}).finally(()=>{els.runDiagnostics.disabled=false;});});
   els.saveGas.addEventListener("click",()=>{
     if(!validGas()){els.gasStatus.textContent="URLを確認してください";log("GASの「ウェブアプリ URL」を使ってください。例：https://script.google.com/macros/s/.../exec（末尾は /exec）。URLの前後の空白や引用符は自動で除去します。");return;}
     const normalized = normalizeGasUrl();
