@@ -9,6 +9,12 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.util.Base64
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.SecureRandom
+import java.util.UUID
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -17,6 +23,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var gasUrlInput: EditText
     private lateinit var roomCodeView: TextView
+    private lateinit var pairingCodeView: TextView
     private var microphoneEnabled = true
     private var cameraEnabled = true
     private var webRtcStarted = false
@@ -60,10 +67,19 @@ class MainActivity : ComponentActivity() {
             setSingleLine(true)
             setText(getPreferences(MODE_PRIVATE).getString("gas_url", ""))
         }
+        pairingCodeView = TextView(this).apply {
+            text = "ペアリングコード：未発行"
+            textSize = 18f
+            setPadding(8, 10, 8, 10)
+        }
         roomCodeView = TextView(this).apply {
             text = "接続コード：------"
             textSize = 22f
             setPadding(8, 18, 8, 18)
+        }
+        val pairButton = Button(this).apply {
+            text = "🔐 iPadとペアリング（8桁コード発行）"
+            setOnClickListener { issuePairingCode() }
         }
         val serviceTest = Button(this).apply {
             text = "① サービスだけ起動（安全テスト）"
@@ -172,6 +188,8 @@ class MainActivity : ComponentActivity() {
                 setPadding(8, 18, 8, 0)
             })
             addView(roomCodeView)
+            addView(pairingCodeView)
+            addView(pairButton)
             addView(serviceTest)
             addView(rtcStart)
             addView(locationPermission)
@@ -205,6 +223,57 @@ class MainActivity : ComponentActivity() {
         } catch (error: Exception) {
             status.text = "カメラ設定に失敗しました: ${error.message}"
         }
+    }
+
+    private fun issuePairingCode() {
+        val gasUrl = gasUrlInput.text.toString().trim().trimEnd('/')
+        if (!gasUrl.startsWith("https://script.google.com/macros/s/") || !gasUrl.endsWith("/exec")) {
+            status.text = "先に正しいGAS /exec URLを入力してください。"
+            return
+        }
+        val prefs = getPreferences(MODE_PRIVATE)
+        val deviceId = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().replace("-", "")
+        val authToken = prefs.getString("device_auth_token", null) ?: run {
+            val bytes = ByteArray(32)
+            SecureRandom().nextBytes(bytes)
+            Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        }
+        val pairBytes = ByteArray(4)
+        SecureRandom().nextBytes(pairBytes)
+        val pairCode = (10000000L + (java.nio.ByteBuffer.wrap(pairBytes).int.toLong() and 0x7fffffffL) % 90000000L).toString()
+        status.text = "ペアリングコードを発行しています…"
+        Thread {
+            var connection: HttpURLConnection? = null
+            try {
+                val body = JSONObject()
+                    .put("action", "pair_start")
+                    .put("deviceId", deviceId)
+                    .put("authToken", authToken)
+                    .put("pairCode", pairCode)
+                    .put("label", Build.MODEL)
+                connection = (URL(gasUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+                }
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val result = JSONObject(response)
+                if (!result.optBoolean("ok")) throw IllegalStateException(result.optString("error", "pairing failed"))
+                prefs.edit().putString("device_id", deviceId).putString("device_auth_token", authToken)
+                    .putString("gas_url", gasUrl).apply()
+                runOnUiThread {
+                    pairingCodeView.text = "ペアリングコード：$pairCode（5分間有効・1回限り）"
+                    status.text = "iPadの端末登録欄に8桁コードを入力してください。"
+                }
+            } catch (error: Exception) {
+                runOnUiThread { status.text = "ペアリングコード発行失敗: ${error.message}" }
+            } finally {
+                connection?.disconnect()
+            }
+        }.start()
     }
 
     private fun startServiceOnly() {
