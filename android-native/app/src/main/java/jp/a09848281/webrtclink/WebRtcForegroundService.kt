@@ -27,6 +27,7 @@ class WebRtcForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_ACTIVE).remove(KEY_GAS_URL).remove(KEY_ROOM).apply()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -38,12 +39,19 @@ class WebRtcForegroundService : Service() {
                 return START_NOT_STICKY
             }
 
-            if (action != ACTION_START_WEBRTC) {
+            if (action != ACTION_START_WEBRTC && action != null) {
                 stopSelf()
                 return START_NOT_STICKY
             }
-
-            startForegroundCompat(buildNotification("WebRTC通信を起動中"), true)
+            val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+            val gasUrl = intent?.getStringExtra(EXTRA_GAS_URL) ?: prefs.getString(KEY_GAS_URL, "").orEmpty()
+            val room = intent?.getStringExtra(EXTRA_ROOM) ?: prefs.getString(KEY_ROOM, "").orEmpty()
+            val restoring = action == null
+            if (restoring && !prefs.getBoolean(KEY_ACTIVE, false)) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            startForegroundCompat(buildNotification(if (restoring) "通信を復元中…" else "WebRTC通信を起動中"), true)
             acquireWakeLock()
         } catch (error: Exception) {
             android.util.Log.e(TAG, "Foreground service start failed", error)
@@ -51,8 +59,6 @@ class WebRtcForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        val gasUrl = intent.getStringExtra(EXTRA_GAS_URL).orEmpty()
-        val room = intent.getStringExtra(EXTRA_ROOM).orEmpty()
         if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
             !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}"))) {
             updateNotification("設定エラー：GAS URLまたは接続コード")
@@ -60,11 +66,12 @@ class WebRtcForegroundService : Service() {
             return START_NOT_STICKY
         }
 
+        prefs.edit().putBoolean(KEY_ACTIVE, true).putString(KEY_GAS_URL, gasUrl).putString(KEY_ROOM, room).apply()
         webRtcSession?.close()
         webRtcSession = WebRtcSession(applicationContext, gasUrl, room) { message ->
             updateNotification(message)
         }.also { it.start() }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun startForegroundCompat(notification: Notification, media: Boolean) {
@@ -136,6 +143,10 @@ class WebRtcForegroundService : Service() {
         const val ACTION_STOP = "jp.a09848281.webrtclink.STOP"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_ROOM = "room_code"
+        private const val PREFS = "webrtc_service_state"
+        private const val KEY_ACTIVE = "active"
+        private const val KEY_GAS_URL = "gas_url"
+        private const val KEY_ROOM = "room"
         private const val CHANNEL_ID = "webrtc_session"
         private const val NOTIFICATION_ID = 4102
     }
