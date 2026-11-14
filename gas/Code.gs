@@ -92,7 +92,9 @@ function pollMessages_(p) {
     const transient = JSON.parse(cache.get(transientKey) || "[]");
     const transientForDevice = transient.filter(function(message) { return message.deviceId === deviceId; });
     messages = messages.concat(transientForDevice);
-    if (transient.length) cache.remove(transientKey);
+    const otherDevices = transient.filter(function(message) { return message.deviceId !== deviceId; });
+    if (otherDevices.length) cache.put(transientKey, JSON.stringify(otherDevices), 30);
+    else cache.remove(transientKey);
   } finally {
     lock.releaseLock();
   }
