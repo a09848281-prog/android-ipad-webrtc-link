@@ -62,7 +62,6 @@ class WebRtcSession(
     @Volatile private var captureHeight = 480
     @Volatile private var captureFps = 15
     @Volatile private var statusHeartbeat: java.util.concurrent.ScheduledFuture<*>? = null
-    @Volatile private var statusHeartbeat: java.util.concurrent.ScheduledFuture<*>? = null
 
     private fun stage(message: String) {
         currentStage = message
