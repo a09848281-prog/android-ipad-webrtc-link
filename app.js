@@ -63,6 +63,7 @@
       status.textContent="🟢 オンライン / "+(result.deviceLabel||activeDevice.nickname||"Android")+
         " / 電池 "+battery+" / "+(result.networkType||"通信方式不明")+" / 接続コード "+result.room;
     }else status.textContent="⚪ オフライン：AndroidアプリでWebRTC待機を開始してください。";
+    if(activeDevice&&activeDevice.lastConnected)status.textContent+=" / 最終接続："+new Date(activeDevice.lastConnected).toLocaleString();
     updateDeviceActions();return result;
   }
 
@@ -458,7 +459,7 @@
   els.registeredDeviceSelect.addEventListener("change",()=>{
     const selected=registeredDevices.find(d=>d.deviceId===els.registeredDeviceSelect.value)||null;
     setActiveDevice(selected);
-    if(selected)els.deviceManagerStatus.textContent="選択中："+(selected.nickname||selected.label)+(selected.lastConnected?" / 最終接続："+new Date(selected.lastConnected).toLocaleString():" / 接続履歴なし");
+    if(selected)els.deviceManagerStatus.textContent="選択中："+(selected.nickname||selected.label)+(selected.lastConnected?" / 最終接続："+new Date(selected.lastConnected).toLocaleString():" / 接続履歴なし")+" / 履歴 "+((selected.history||[]).length)+"件";
   });
   els.renameDevice.addEventListener("click",()=>{
     if(!activeDevice)return;
