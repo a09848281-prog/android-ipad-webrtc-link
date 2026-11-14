@@ -312,52 +312,6 @@
     }catch(error){reconnecting=false;throw error;}
   }
 
-  function videoTrack(){return localStream?localStream.getVideoTracks()[0]||null:null;}
-  function updateCameraCapabilities(){
-    const track=videoTrack();if(!track)return;
-    let caps={};try{caps=track.getCapabilities?track.getCapabilities():{};}catch(_){caps={};}const zoom=caps.zoom;
-    if(zoom){els.zoomRange.min=String(zoom.min);els.zoomRange.max=String(zoom.max);els.zoomRange.step=String(zoom.step||0.1);els.zoomRange.value=String(Math.max(zoom.min,Math.min(zoom.max,1)));els.zoomRange.disabled=false;els.zoomValue.textContent=els.zoomRange.value+"x";}
-    else{els.zoomRange.disabled=true;els.zoomValue.textContent="非対応";}
-    els.torchToggle.disabled=caps.torch!==true;els.torchToggle.checked=false;
-    els.resolutionSelect.disabled=false;els.fpsSelect.disabled=false;els.adaptiveToggle.disabled=false;
-  }
-  function setCameraControlsEnabled(enabled){
-    [els.resolutionSelect,els.fpsSelect,els.adaptiveToggle].forEach(el=>el.disabled=!enabled);
-    if(!enabled){els.zoomRange.disabled=true;els.torchToggle.disabled=true;els.torchToggle.checked=false;}
-    else updateCameraCapabilities();
-  }
-  async function applyCameraProfile(){
-    const track=videoTrack();if(!track||!started)return;
-    const [width,height]=els.resolutionSelect.value.split("x").map(Number),fps=Number(els.fpsSelect.value);
-    try{await track.applyConstraints({width:{ideal:width},height:{ideal:height},frameRate:{ideal:fps,max:fps}});log("カメラ設定を適用しました（実際の値は端末により異なります）。");}
-    catch(error){log("選択した画質はこの端末で利用できません: "+error.message);}
-    updateSenderBitrate();
-  }
-  async function updateSenderBitrate(level){
-    if(!pc)return;const sender=pc.getSenders().find(item=>item.track&&item.track.kind==="video");
-    if(!sender||!sender.getParameters||!sender.setParameters)return;
-    try{const params=sender.getParameters();if(!params.encodings||!params.encodings.length)return;
-      const selected=level||(els.adaptiveToggle.checked?adaptiveLastLevel:"high");
-      params.encodings[0].maxBitrate=selected==="low"?350000:selected==="medium"?900000:2500000;
-      await sender.setParameters(params);
-    }catch(error){console.warn("bitrate adjustment unavailable",error);}
-  }
-  async function applyZoom(){
-    const track=videoTrack();if(!track)return;
-    try{await track.applyConstraints({advanced:[{zoom:Number(els.zoomRange.value)}]});els.zoomValue.textContent=els.zoomRange.value+"x";}
-    catch(error){log("ズームを適用できません: "+error.message);}
-  }
-  async function applyTorch(){
-    const track=videoTrack();if(!track)return;
-    try{await track.applyConstraints({advanced:[{torch:els.torchToggle.checked}]});}
-    catch(error){els.torchToggle.checked=false;log("ライト機能はこのカメラで利用できません: "+error.message);}
-  }
-  function adaptQuality(rtt,loss){
-    if(!els.adaptiveToggle.checked)return;
-    const level=(loss>8||rtt>500)?"low":(loss>3||rtt>250)?"medium":"high";
-    if(level!==adaptiveLastLevel){adaptiveLastLevel=level;updateSenderBitrate(level);log("通信状況に合わせて送信ビットレートを"+({low:"低",medium:"中",high:"高"}[level])+"に調整しました。");}
-  }
-
   async function getMedia(constraints){
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("このブラウザではカメラ・マイクを利用できません。HTTPSのページで開いてください。");
     return navigator.mediaDevices.getUserMedia(constraints);
@@ -563,7 +517,7 @@
     const next=cameraFacing==="environment"?"user":"environment";
     let replacement=null;
     try{
-      try{replacement=await getMedia({audio:false,video:{facingMode:{ideal:next},width:{ideal:Number(els.resolutionSelect.value.split("x")[0])},height:{ideal:Number(els.resolutionSelect.value.split("x")[1])},frameRate:{ideal:Number(els.fpsSelect.value)}}});}
+      try{replacement=await getMedia({audio:false,video:{facingMode:{ideal:next},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}}});}
       catch(firstError){throw new Error("切替先カメラを起動できません: "+firstError.message);}
       const newTrack=replacement.getVideoTracks()[0];
       if(!newTrack)throw new Error("切替先カメラの映像トラックを取得できませんでした。");
