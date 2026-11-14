@@ -32,3 +32,8 @@ button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:12px 15px
 .device-presence.online{border-color:#278d6d;color:#8be3bf}
 
 #diagnosticResult{white-space:pre-line;line-height:1.8;padding:10px;border-radius:8px;background:#0d1727}
+
+.device-manager{margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:#0d1727}
+.device-manager h3{font-size:14px;margin:0 0 8px}
+.device-manager .actions input{min-width:0;flex:1}
+.device-select{width:100%;padding:12px;border:1px solid #40516a;border-radius:10px;background:#0b1220;color:var(--text)}
