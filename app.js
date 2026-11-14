@@ -1,5 +1,6 @@
 (() => {
   "use strict";
+  // WebRTC Link v2: authenticated device pairing, presence, and one-shot location.
   const $ = (id) => document.getElementById(id);
   const els = {
     gasUrl:$("gasUrl"),gasStatus:$("gasStatus"),saveGas:$("saveGas"),hostMode:$("hostMode"),viewerMode:$("viewerMode"),
