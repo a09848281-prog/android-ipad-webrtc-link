@@ -3,6 +3,9 @@ package jp.a09848281.webrtclink
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
@@ -56,6 +59,7 @@ class WebRtcSession(
     @Volatile private var captureWidth = 640
     @Volatile private var captureHeight = 480
     @Volatile private var captureFps = 15
+    @Volatile private var statusHeartbeat: java.util.concurrent.ScheduledFuture<*>? = null
 
     private fun stage(message: String) {
         currentStage = message
@@ -70,6 +74,7 @@ class WebRtcSession(
                 initializePeer()
                 stage("RTC-11: GAS受信待ちを開始")
                 startPolling()
+                startDeviceHeartbeat()
                 stage("RTC-12: Offer作成")
                 createOffer()
             } catch (t: Throwable) {
@@ -370,6 +375,35 @@ class WebRtcSession(
         }
     }
 
+    private fun startDeviceHeartbeat() {
+        statusHeartbeat?.cancel(false)
+        statusHeartbeat = network.scheduleAtFixedRate({
+            if (closed.get()) return@scheduleAtFixedRate
+            val battery = try {
+                val manager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }
+            } catch (_: Throwable) { null }
+            val networkType = try {
+                val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val active = manager.activeNetwork
+                val caps = active?.let { manager.getNetworkCapabilities(it) }
+                when {
+                    caps == null -> "offline"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "モバイル通信"
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                    else -> "その他"
+                }
+            } catch (_: Throwable) { "不明" }
+            val payload = JSONObject()
+                .put("deviceLabel", Build.MODEL)
+                .put("batteryPercent", battery ?: JSONObject.NULL)
+                .put("networkType", networkType)
+                .put("timestamp", System.currentTimeMillis())
+            sendSignal("device_status", payload)
+        }, 0, 30, TimeUnit.SECONDS)
+    }
+
     private fun requestOneShotLocation() {
         if (closed.get()) return
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -476,6 +510,8 @@ class WebRtcSession(
         if (!closed.compareAndSet(false, true)) return
         reconnectTimeout?.cancel(false)
         reconnectTimeout = null
+        statusHeartbeat?.cancel(false)
+        statusHeartbeat = null
         Thread({
             try { network.shutdownNow() } catch (_: Throwable) {}
             try { sender.shutdownNow() } catch (_: Throwable) {}
