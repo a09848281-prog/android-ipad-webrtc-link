@@ -137,6 +137,10 @@ function pairStart_(m) {
   const lock = LockService.getScriptLock();
   lock.waitLock(8000);
   try {
+    const cache = CacheService.getScriptCache();
+    const startAttempts = Number(cache.get("pair_start_attempts") || 0);
+    if (startAttempts >= 10) return output_({ ok: false, error: "rate_limited" });
+    cache.put("pair_start_attempts", String(startAttempts + 1), 60);
     const props = PropertiesService.getScriptProperties();
     const existingTokenHash = props.getProperty("device_auth_" + deviceId);
     if (existingTokenHash && existingTokenHash !== tokenHash_(authToken)) {
