@@ -515,7 +515,7 @@
     els.locationStatus.textContent="Androidへ1回限りの取得を要求しています…";
     try{await sendSignal("location_request",{oneShot:true},"android");}
     catch(error){els.locationStatus.textContent="要求を送信できませんでした: "+error.message;els.requestLocation.disabled=false;return;}
-    locationTimeout=setTimeout(()=>{locationTimeout=null;els.locationStatus.textContent="応答がありません。Androidの接続・位置情報許可を確認してください。";els.requestLocation.disabled=false;},20000);
+    locationTimeout=setTimeout(()=>{locationTimeout=null;els.locationStatus.textContent="応答がありません。Androidの接続・位置情報許可を確認してください。";els.requestLocation.disabled=false;},35000);
   });
 
   els.micToggle.addEventListener("click",()=>{
