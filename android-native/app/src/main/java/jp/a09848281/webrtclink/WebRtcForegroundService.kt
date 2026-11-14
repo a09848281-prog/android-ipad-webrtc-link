@@ -22,6 +22,7 @@ import androidx.core.app.NotificationCompat
 class WebRtcForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var webRtcSession: WebRtcSession? = null
+    private var activeRoom: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -41,6 +42,15 @@ class WebRtcForegroundService : Service() {
         }
 
         val action = intent?.action
+        if (action == ACTION_START_WEBRTC && webRtcSession != null) {
+            val requestedRoom = intent?.getStringExtra(EXTRA_ROOM)
+            if (!requestedRoom.isNullOrBlank() && requestedRoom == activeRoom) {
+                // The Activity may be reopened while the foreground call is already alive.
+                // Never tear down and recreate the active PeerConnection for the same room.
+                updateNotification("通話待機中：$requestedRoom")
+                return START_STICKY
+            }
+        }
         when (action) {
             ACTION_TOGGLE_MIC -> { webRtcSession?.setMicrophoneEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
             ACTION_TOGGLE_VIDEO -> { webRtcSession?.setCameraEnabled(intent?.getBooleanExtra(EXTRA_ENABLED, true) ?: true); return START_STICKY }
@@ -89,9 +99,10 @@ class WebRtcForegroundService : Service() {
         }
 
         webRtcSession?.close()
+        activeRoom = room
         webRtcSession = WebRtcSession(applicationContext, gasUrl, room, deviceId, authToken) { message ->
             updateNotification(message)
-            if (message == "相手側が切断しました。") { clearPersistedSession(); stopSelf() }
+            if (message == "相手側が切断しました。") { activeRoom = null; clearPersistedSession(); stopSelf() }
         }.also { it.start() }
         return START_STICKY
     }
@@ -158,6 +169,7 @@ class WebRtcForegroundService : Service() {
     override fun onDestroy() {
         webRtcSession?.close()
         webRtcSession = null
+        activeRoom = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
