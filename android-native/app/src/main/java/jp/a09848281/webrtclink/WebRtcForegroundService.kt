@@ -1,5 +1,8 @@
 package jp.a09848281.webrtclink
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -97,11 +100,17 @@ class WebRtcForegroundService : Service() {
 
     private fun startForegroundCompat(notification: Notification, media: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val type = if (media) {
+            var type = if (media) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             } else {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE
+            }
+            val hasLocationPermission =
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (media && hasLocationPermission) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }
             startForeground(NOTIFICATION_ID, notification, type)
         } else {
