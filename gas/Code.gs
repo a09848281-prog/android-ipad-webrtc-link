@@ -110,7 +110,7 @@ function validMessage_(m) {
   if (!m || !/^\d{6}$/.test(String(m.room || ""))) return false;
   if (!/^(android|ipad)$/.test(String(m.from || ""))) return false;
   if (!/^(android|ipad)$/.test(String(m.to || "")) || m.from === m.to) return false;
-  if (!/^(offer|answer|candidate|hangup|location_request|location_result|location_denied|location_error|device_status)$/.test(String(m.type || ""))) return false;
+  if (!/^(offer|answer|candidate|hangup|location_request|location_result|location_denied|location_error|device_status|camera_switch)$/.test(String(m.type || ""))) return false;
   if (!m.id || String(m.id).length > 100) return false;
   if (!authorizedDevice_(String(m.deviceId || ""), String(m.authToken || ""))) return false;
   if (m.type === "location_request") {
