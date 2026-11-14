@@ -72,6 +72,11 @@
   async function handleSignal(m){
     if(m.room!==room || m.to!==role) return;
     try{
+      if(m.type==="hangup"){
+        log("相手側から切断通知を受信しました。");
+        await stop({notify:false,reason:"相手側が接続を終了しました。"});
+        return;
+      }
       if(m.type==="offer" && role==="ipad"){
         await pc.setRemoteDescription(new RTCSessionDescription(m.payload)); await flushCandidates();
         const answer=await pc.createAnswer(); await pc.setLocalDescription(answer);
@@ -147,15 +152,22 @@
     started=true;els.disconnect.disabled=false;els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
-  async function stop(){
+  async function stop(options={}){
+    const notify=options.notify!==false;
+    const reason=options.reason||"切断しました。";
+    const wasStarted=started;
+    if(notify&&wasStarted&&room){
+      try{await sendSignal("hangup",{reason:"user-disconnect"},role==="android"?"ipad":"android");}
+      catch(_){log("切断通知を送信できませんでした。ローカル側の終了処理を続行します。");}
+    }
     started=false;stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
-    if(pc){pc.ontrack=null;pc.onicecandidate=null;pc.close();pc=null;}
+    if(pc){pc.ontrack=null;pc.onicecandidate=null;pc.onconnectionstatechange=null;pc.close();pc=null;}
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
     els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
     els.startHost.disabled=false;els.joinRoom.disabled=false;els.roomCode.textContent="------";els.copyCode.disabled=true;
-    setState("未接続");log("切断しました。");
+    setState("未接続");log(reason);
   }
   function pttDown(e){if(role!=="ipad"||!pttTrack||!started)return;e.preventDefault();pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 送信中…（離すとミュート）";}
   function pttUp(){if(pttTrack){pttTrack.enabled=false;els.ptt.classList.remove("active");els.ptt.textContent="🎙️ 押している間だけ話す";}}
