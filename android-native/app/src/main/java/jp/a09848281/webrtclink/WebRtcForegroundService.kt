@@ -26,35 +26,27 @@ class WebRtcForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_ACTIVE).remove(KEY_GAS_URL).remove(KEY_ROOM).apply()
+        val action = intent?.action
+        if (action == ACTION_STOP) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove(KEY_ACTIVE).remove(KEY_GAS_URL).remove(KEY_ROOM).apply()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (action == ACTION_DIAGNOSTIC_ONLY) {
+            startForegroundCompat(buildNotification("診断：サービスのみ起動中"), false)
+            return START_NOT_STICKY
+        }
+        if (action != null && action != ACTION_START_WEBRTC) {
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val action = intent?.action
-        try {
-            if (action == ACTION_DIAGNOSTIC_ONLY) {
-                startForegroundCompat(buildNotification("診断：サービスのみ起動中"), false)
-                return START_NOT_STICKY
-            }
-
-            if (action != ACTION_START_WEBRTC && action != null) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-            val gasUrl = intent?.getStringExtra(EXTRA_GAS_URL) ?: prefs.getString(KEY_GAS_URL, "").orEmpty()
-            val room = intent?.getStringExtra(EXTRA_ROOM) ?: prefs.getString(KEY_ROOM, "").orEmpty()
-            val restoring = action == null
-            if (restoring && !prefs.getBoolean(KEY_ACTIVE, false)) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            startForegroundCompat(buildNotification(if (restoring) "通信を復元中…" else "WebRTC通信を起動中"), true)
-            acquireWakeLock()
-        } catch (error: Exception) {
-            android.util.Log.e(TAG, "Foreground service start failed", error)
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val gasUrl = intent?.getStringExtra(EXTRA_GAS_URL) ?: prefs.getString(KEY_GAS_URL, "").orEmpty()
+        val room = intent?.getStringExtra(EXTRA_ROOM) ?: prefs.getString(KEY_ROOM, "").orEmpty()
+        val restoring = action == null
+        if (restoring && !prefs.getBoolean(KEY_ACTIVE, false)) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -62,6 +54,15 @@ class WebRtcForegroundService : Service() {
         if (!gasUrl.startsWith("https://script.google.com/macros/s/") ||
             !gasUrl.endsWith("/exec") || !room.matches(Regex("\\d{6}"))) {
             updateNotification("設定エラー：GAS URLまたは接続コード")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        try {
+            startForegroundCompat(buildNotification(if (restoring) "通信を復元中…" else "WebRTC通信を起動中"), true)
+            acquireWakeLock()
+        } catch (error: Exception) {
+            android.util.Log.e(TAG, "Foreground service start failed", error)
             stopSelf()
             return START_NOT_STICKY
         }
