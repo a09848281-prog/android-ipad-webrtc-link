@@ -30,6 +30,10 @@ class WebRtcForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent == null && !getSharedPreferences("webrtc_link", MODE_PRIVATE).getBoolean("active_session", false)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             val activeSession = webRtcSession
             if (activeSession != null) activeSession.disconnect { clearPersistedSession(); stopSelf() }
@@ -66,6 +70,7 @@ class WebRtcForegroundService : Service() {
             acquireWakeLock()
         } catch (error: Exception) {
             android.util.Log.e(TAG, "Foreground service start failed", error)
+            clearPersistedSession()
             stopSelf()
             return START_NOT_STICKY
         }
