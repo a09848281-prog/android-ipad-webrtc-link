@@ -17,16 +17,16 @@ button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:12px 15px
 
 .preview-actions{display:flex;flex-direction:column;gap:6px;min-width:0}.preview-actions span{font-size:11px;color:var(--muted)}
 
-.camera-controls{margin-top:14px;padding:12px;border:1px solid #d7deea;border-radius:12px;background:#f8fafc}
+.camera-controls{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#101b2c;color:var(--text)}
 .camera-controls h3{margin:0 0 10px;font-size:14px}
 .camera-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:9px 0;font-size:14px}
-.camera-setting select{min-width:125px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;background:white}
+.camera-setting select{min-width:125px;padding:10px;border:1px solid #40516a;border-radius:9px;background:#0b1220;color:var(--text)}
 .camera-setting input[type=range]{flex:1;max-width:180px}
 .camera-setting input[type=checkbox]{width:18px;height:18px}
 
-.location-panel{margin:14px 0;padding:12px;border:1px solid #d7deea;border-radius:12px;background:#f8fafc}
+.location-panel{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:14px;background:#101b2c;color:var(--text)}
 .location-panel h3{margin:0 0 10px;font-size:14px}
-.location-result{margin-top:10px;padding:10px;border-radius:8px;background:#e8f0fe;overflow-wrap:anywhere;font-size:13px}
+.location-result{margin-top:10px;padding:12px;border-radius:10px;background:#173454;color:#eaf3ff;overflow-wrap:anywhere;font-size:13px}
 
 .device-presence{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#0d1727;color:var(--muted);font-size:13px}
 .device-presence.online{border-color:#278d6d;color:#8be3bf}
@@ -37,3 +37,9 @@ button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:12px 15px
 .device-manager h3{font-size:14px;margin:0 0 8px}
 .device-manager .actions input{min-width:0;flex:1}
 .device-select{width:100%;padding:12px;border:1px solid #40516a;border-radius:10px;background:#0b1220;color:var(--text)}
+
+/* v3: improve contrast and make unavailable controls visibly understandable */
+.camera-controls label,.location-panel p{color:#d7e2f2}
+.camera-controls button,.location-panel button{min-height:44px}
+.camera-controls input[type=range]{accent-color:var(--blue)}
+.camera-controls select:disabled,.camera-controls input:disabled{opacity:.6}
