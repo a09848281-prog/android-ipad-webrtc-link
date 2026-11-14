@@ -10,7 +10,7 @@
     ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),viewDeviceHistory:$("viewDeviceHistory"),deviceManagerStatus:$("deviceManagerStatus"),registeredDeviceStatus:$("registeredDeviceStatus"),refreshDeviceStatus:$("refreshDeviceStatus"),connectRegisteredDevice:$("connectRegisteredDevice")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
-  let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
+  let role = "ipad", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
   let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
   let reconnectTimer=null,reconnectWatchdog=null,reconnectAttempts=0,reconnecting=false,adaptiveLastLevel="high",locationTimeout=null,deviceStatusTimer=null;
@@ -377,7 +377,7 @@
     pttTrack=localStream.getAudioTracks()[0];pttTrack.enabled=false;
     setupPeer();pc.addTrack(pttTrack,localStream);
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.devicePresence.textContent="🟡 Android端末の状態を確認中…";els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
+    started=true;els.disconnect.disabled=false;els.requestLocation.disabled=role!=="ipad";els.cameraSwitch.disabled=role!=="ipad";els.devicePresence.textContent="🟡 Android端末の状態を確認中…";els.ptt.disabled=false;els.micToggle.disabled=false;els.videoToggle.disabled=true;setState("Androidを検索中","wait");startPolling();
     log("Android側からの接続情報を待っています…");
   }
   async function stop(options={}){
@@ -389,12 +389,12 @@
       try{await sendSignal("hangup",{reason:"user-disconnect"},role==="android"?"ipad":"android");}
       catch(_){log("切断通知を送信できませんでした。ローカル側の終了処理を続行します。");}
     }
-    started=false;if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}if(deviceStatusTimer){clearTimeout(deviceStatusTimer);deviceStatusTimer=null;}els.devicePresence.textContent="📱 Android端末：状態不明";els.devicePresence.classList.remove("online");els.requestLocation.disabled=true;els.locationResult.textContent="";els.locationResult.classList.add("hidden");els.locationStatus.textContent="接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。";stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
+    started=false;if(locationTimeout){clearTimeout(locationTimeout);locationTimeout=null;}if(deviceStatusTimer){clearTimeout(deviceStatusTimer);deviceStatusTimer=null;}els.devicePresence.textContent="📱 Android端末：状態不明";els.devicePresence.classList.remove("online");els.requestLocation.disabled=true;els.cameraSwitch.disabled=true;els.locationResult.textContent="";els.locationResult.classList.add("hidden");els.locationStatus.textContent="接続後、ボタンを押したときだけAndroidへ1回だけ要求します。自動取得・履歴保存はしません。";stopPolling();if(statsTimer)clearInterval(statsTimer);statsTimer=null;connectedAt=0;previousBytes=null;previousAt=0;["duration","rtt","bitrate","packetLoss"].forEach(id=>{const e=document.getElementById(id);if(e)e.textContent=id==="duration"?"--:--":"—";});
     if(pc){pc.ontrack=null;pc.onicecandidate=null;pc.onconnectionstatechange=null;pc.close();pc=null;}
     if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
-    els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
+    els.mediaState.textContent="映像・音声：未受信";els.cameraSwitch.disabled=true;els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
     els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;setCameraControlsEnabled(false);els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log(reason);
   }
@@ -534,7 +534,15 @@
   });
   els.remoteVolume.addEventListener("input",()=>{els.remoteVideo.volume=Number(els.remoteVolume.value);});
   els.cameraSwitch.addEventListener("click",async()=>{
-    if(role!=="android"||!localStream||!pc||!started)return;
+    if(role==="ipad"){
+      if(!started||!pc||pc.connectionState!=="connected"){log("Androidとの接続後にカメラを切り替えられます。");return;}
+      els.cameraSwitch.disabled=true;
+      try{await sendSignal("camera_switch",{requestedAt:Date.now()},"android");log("Androidへカメラ切り替えを要求しました。");}
+      catch(error){log("カメラ切り替え要求に失敗しました: "+error.message);}
+      setTimeout(()=>{if(started)els.cameraSwitch.disabled=false;},1800);
+      return;
+    }
+    if(!localStream||!pc||!started)return;
     els.cameraSwitch.disabled=true;
     const next=cameraFacing==="environment"?"user":"environment";
     let replacement=null;
