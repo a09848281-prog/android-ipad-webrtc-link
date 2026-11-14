@@ -289,7 +289,7 @@ class WebRtcSession(
                         override fun onSetSuccess() {
                             sendSignal("offer", JSONObject().put("type", description.type.canonicalForm()).put("sdp", description.description))
                             report("自動再接続Offerを送信しました（試行 $reconnectAttempts）")
-                            scheduleIceRestart(minOf(30L, 5L * reconnectAttempts.coerceAtLeast(1)))
+                            scheduleIceRestart(minOf(30L, 15L * reconnectAttempts.coerceAtLeast(1)))
                         }
                         override fun onSetFailure(error: String) { fail("再接続Offer設定失敗: $error"); scheduleIceRestart(5) }
                         override fun onCreateSuccess(description: SessionDescription) {}
