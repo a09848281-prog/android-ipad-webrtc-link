@@ -27,7 +27,8 @@ class WebRtcForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopSelf()
+            val activeSession = webRtcSession
+            if (activeSession != null) activeSession.disconnect { stopSelf() } else stopSelf()
             return START_NOT_STICKY
         }
 
@@ -63,6 +64,7 @@ class WebRtcForegroundService : Service() {
         webRtcSession?.close()
         webRtcSession = WebRtcSession(applicationContext, gasUrl, room) { message ->
             updateNotification(message)
+            if (message == "相手側が切断しました。") stopSelf()
         }.also { it.start() }
         return START_NOT_STICKY
     }
