@@ -6,12 +6,12 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "android", room = "", pc = null, localStream = null, pttTrack = null;
   let pollTimer = null, seen = new Set(), pendingCandidates = [], remoteDescriptionSet = false;
-  let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0;
+  let started = false, polling = false, statsTimer = null, connectedAt = 0, previousBytes = null, previousAt = 0, cameraFacing = "environment";
 
   function log(message){ els.log.textContent = message; }
   function setState(text, kind=""){ els.connectionState.textContent=text; els.connectionState.className="state "+kind; }
@@ -135,10 +135,10 @@
   async function startAndroid(){
     if(!validGas()) throw new Error("先に正しいGAS WebアプリURL（/exec）を保存してください。");
     els.startHost.disabled=true; log("Androidのカメラ・マイクを起動しています…");
-    localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}});
+    cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:1280},height:{ideal:720}}});
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
-    started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;setState("接続待機中","wait");startPolling();
+    started=true; els.disconnect.disabled=false; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
@@ -166,7 +166,7 @@
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
     els.mediaState.textContent="映像・音声：未受信";els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
-    els.startHost.disabled=false;els.joinRoom.disabled=false;els.roomCode.textContent="------";els.copyCode.disabled=true;
+    els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log(reason);
   }
   function pttDown(e){if(role!=="ipad"||!pttTrack||!started)return;e.preventDefault();pttTrack.enabled=true;els.ptt.classList.add("active");els.ptt.textContent="🔴 送信中…（離すとミュート）";}
@@ -200,6 +200,28 @@
     els.videoToggle.textContent=enabled?"📷 映像を停止":"▶️ 映像を再開";
   });
   els.remoteVolume.addEventListener("input",()=>{els.remoteVideo.volume=Number(els.remoteVolume.value);});
+  els.cameraSwitch.addEventListener("click",async()=>{
+    if(role!=="android"||!localStream||!pc||!started)return;
+    els.cameraSwitch.disabled=true;
+    const next=cameraFacing==="environment"?"user":"environment";
+    try{
+      let replacement;
+      try{replacement=await getMedia({audio:false,video:{facingMode:{ideal:next},width:{ideal:1280},height:{ideal:720}}});}
+      catch(firstError){throw new Error("切替先カメラを起動できません: "+firstError.message);}
+      const newTrack=replacement.getVideoTracks()[0];
+      if(!newTrack)throw new Error("切替先カメラの映像トラックを取得できませんでした。");
+      const sender=pc.getSenders().find(item=>item.track&&item.track.kind==="video");
+      if(!sender)throw new Error("送信中の映像トラックが見つかりません。");
+      await sender.replaceTrack(newTrack);
+      const oldTracks=localStream.getVideoTracks();
+      oldTracks.forEach(track=>{localStream.removeTrack(track);track.stop();});
+      localStream.addTrack(newTrack);
+      els.localVideo.srcObject=localStream;
+      cameraFacing=next;
+      log(next==="user"?"前面カメラに切り替えました。":"背面カメラに切り替えました。");
+    }catch(error){log("カメラ切替に失敗しました: "+error.message);}
+    finally{els.cameraSwitch.disabled=false;}
+  });
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","pointerleave","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   document.addEventListener("visibilitychange",()=>{if(document.hidden && pttTrack)pttUp();});
   if ("serviceWorker" in navigator && location.protocol === "https:") {
