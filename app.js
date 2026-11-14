@@ -7,7 +7,7 @@
     hostPanel:$("hostPanel"),viewerPanel:$("viewerPanel"),startHost:$("startHost"),roomCode:$("roomCode"),copyCode:$("copyCode"),
     joinCode:$("joinCode"),joinRoom:$("joinRoom"),remoteVideo:$("remoteVideo"),localVideo:$("localVideo"),
     placeholder:$("videoPlaceholder"),connectionState:$("connectionState"),mediaState:$("mediaState"),
-    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),resolutionSelect:$("resolutionSelect"),fpsSelect:$("fpsSelect"),zoomRange:$("zoomRange"),zoomValue:$("zoomValue"),torchToggle:$("torchToggle"),adaptiveToggle:$("adaptiveToggle"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),viewDeviceHistory:$("viewDeviceHistory"),deviceManagerStatus:$("deviceManagerStatus"),registeredDeviceStatus:$("registeredDeviceStatus"),refreshDeviceStatus:$("refreshDeviceStatus"),connectRegisteredDevice:$("connectRegisteredDevice")
+    ptt:$("pttButton"),disconnect:$("disconnect"),log:$("log"),micToggle:$("micToggle"),videoToggle:$("videoToggle"),remoteVolume:$("remoteVolume"),cameraSwitch:$("cameraSwitch"),requestLocation:$("requestLocation"),locationStatus:$("locationStatus"),locationResult:$("locationResult"),devicePresence:$("devicePresence"),runDiagnostics:$("runDiagnostics"),diagnosticResult:$("diagnosticResult"),pairCodeInput:$("pairCodeInput"),registerDevice:$("registerDevice"),registeredDeviceSelect:$("registeredDeviceSelect"),renameDevice:$("renameDevice"),favoriteDevice:$("favoriteDevice"),removeDevice:$("removeDevice"),viewDeviceHistory:$("viewDeviceHistory"),deviceManagerStatus:$("deviceManagerStatus"),registeredDeviceStatus:$("registeredDeviceStatus"),refreshDeviceStatus:$("refreshDeviceStatus"),connectRegisteredDevice:$("connectRegisteredDevice")
   };
   const ICE = {iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]};
   let role = "ipad", room = "", pc = null, localStream = null, pttTrack = null;
@@ -244,7 +244,6 @@
         });
         document.getElementById("rtt").textContent=rtt==null?"—":Math.round(rtt)+" ms";
         document.getElementById("packetLoss").textContent=(lost+received)?(100*lost/(lost+received)).toFixed(1)+"%":"—";
-        adaptQuality(rtt==null?0:rtt,lost+received===0?0:lost/(lost+received)*100);
         if(bytes!=null&&previousBytes!=null&&previousAt)document.getElementById("bitrate").textContent=Math.max(0,(bytes-previousBytes)*8/((now-previousAt)/1000)/1000).toFixed(0)+" kbps";
         if(bytes!=null){previousBytes=bytes;previousAt=now;}
       }catch(_){}
@@ -367,11 +366,11 @@
     if(!authDeviceId||!authToken)throw new Error("先に端末登録を行ってください。");
     if(!validGas()) throw new Error("先に正しいGAS WebアプリURL（/exec）を保存してください。");
     els.startHost.disabled=true; log("Androidのカメラ・マイクを起動しています…");
-    cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:Number(els.resolutionSelect.value.split("x")[0])},height:{ideal:Number(els.resolutionSelect.value.split("x")[1])},frameRate:{ideal:Number(els.fpsSelect.value)}}});
+    cameraFacing="environment";localStream=await getMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{facingMode:{ideal:cameraFacing},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:30}}});
     els.localVideo.srcObject=localStream; room=makeRoom(); els.roomCode.textContent=room;els.copyCode.disabled=false;
     setupPeer(); localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
     reconnectAttempts=0;reconnecting=false;clearReconnectTimer();
-    started=true; els.disconnect.disabled=false; els.requestLocation.disabled=role!=="ipad"; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setCameraControlsEnabled(true);setState("接続待機中","wait");startPolling();
+    started=true; els.disconnect.disabled=false; els.requestLocation.disabled=role!=="ipad"; els.micToggle.disabled=false;els.videoToggle.disabled=false;els.cameraSwitch.disabled=false;setState("接続待機中","wait");startPolling();
     const offer=await pc.createOffer();await pc.setLocalDescription(offer);await sendSignal("offer",pc.localDescription,"ipad");
     log("接続待機中です。6桁コードをiPadに入力してください。");
   }
@@ -402,7 +401,7 @@
     pttTrack=null;pendingCandidates=[];remoteDescriptionSet=false;seen.clear();
     els.remoteVideo.srcObject=null;els.localVideo.srcObject=null;els.placeholder.classList.remove("hidden");
     els.mediaState.textContent="映像・音声：未受信";els.cameraSwitch.disabled=true;els.ptt.disabled=true;els.micToggle.disabled=true;els.videoToggle.disabled=true;els.remoteVolume.disabled=true;els.remoteVolume.value="1";els.remoteVideo.volume=1;els.micToggle.textContent="🎙️ マイクをミュート";els.videoToggle.textContent="📷 映像を停止";els.ptt.classList.remove("active");els.disconnect.disabled=true;
-    els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;setCameraControlsEnabled(false);els.roomCode.textContent="------";els.copyCode.disabled=true;
+    els.startHost.disabled=false;els.joinRoom.disabled=false;els.cameraSwitch.disabled=true;els.roomCode.textContent="------";els.copyCode.disabled=true;
     setState("未接続");log(reason);
   }
   function pttDown(e){
@@ -581,11 +580,6 @@
     }catch(error){if(replacement)replacement.getTracks().forEach(track=>track.stop());log("カメラ切替に失敗しました: "+error.message);}
     finally{els.cameraSwitch.disabled=false;}
   });
-  els.resolutionSelect.addEventListener("change",applyCameraProfile);
-  els.fpsSelect.addEventListener("change",applyCameraProfile);
-  els.zoomRange.addEventListener("input",applyZoom);
-  els.torchToggle.addEventListener("change",applyTorch);
-  els.adaptiveToggle.addEventListener("change",()=>{adaptiveLastLevel="high";updateSenderBitrate();log(els.adaptiveToggle.checked?"自動画質調整を有効にしました。":"自動画質調整を停止しました。");});
   els.ptt.addEventListener("pointerdown",pttDown);["pointerup","pointercancel","lostpointercapture"].forEach(ev=>els.ptt.addEventListener(ev,pttUp));
   window.addEventListener("pointerup",pttUp);window.addEventListener("blur",pttUp);
   document.addEventListener("visibilitychange",()=>{if(document.hidden)pttUp();});
