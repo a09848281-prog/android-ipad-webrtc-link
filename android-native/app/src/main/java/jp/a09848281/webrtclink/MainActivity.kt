@@ -311,12 +311,21 @@ class MainActivity : ComponentActivity() {
             status.text = "GAS WebアプリURLを確認してください。末尾が /exec のURLを入力します。"
             return
         }
+        val prefs = getPreferences(MODE_PRIVATE)
+        val deviceId = prefs.getString("device_id", null)
+        val authToken = prefs.getString("device_auth_token", null)
+        if (deviceId.isNullOrBlank() || authToken.isNullOrBlank()) {
+            status.text = "先に「iPadとペアリング」を行ってください。"
+            return
+        }
         val room = (100000..999999).random().toString()
-        getPreferences(MODE_PRIVATE).edit().putString("gas_url", gasUrl).apply()
+        prefs.edit().putString("gas_url", gasUrl).apply()
         val intent = Intent(this, WebRtcForegroundService::class.java)
             .setAction(WebRtcForegroundService.ACTION_START_WEBRTC)
             .putExtra(WebRtcForegroundService.EXTRA_GAS_URL, gasUrl)
             .putExtra(WebRtcForegroundService.EXTRA_ROOM, room)
+            .putExtra(WebRtcForegroundService.EXTRA_DEVICE_ID, deviceId)
+            .putExtra(WebRtcForegroundService.EXTRA_AUTH_TOKEN, authToken)
         try {
             ContextCompat.startForegroundService(this, intent)
             webRtcStarted = true
