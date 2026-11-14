@@ -249,6 +249,47 @@ class WebRtcSession(
         }, constraints)
     }
 
+    fun setMicrophoneEnabled(enabled: Boolean) {
+        if (closed.get()) return
+        network.execute { localAudioTrack?.setEnabled(enabled); report(if (enabled) "Androidマイク：ON" else "Androidマイク：ミュート") }
+    }
+
+    fun setCameraEnabled(enabled: Boolean) {
+        if (closed.get()) return
+        network.execute { localVideoTrack?.setEnabled(enabled); report(if (enabled) "Android映像：ON" else "Android映像：停止") }
+    }
+
+    fun switchCamera() {
+        if (closed.get()) return
+        network.execute {
+            val active = capturer ?: return@execute
+            active.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                override fun onCameraSwitchDone(isFrontCamera: Boolean) {
+                    report(if (isFrontCamera) "前面カメラに切り替えました" else "背面カメラに切り替えました")
+                }
+                override fun onCameraSwitchError(errorDescription: String) {
+                    report("カメラ切替失敗: $errorDescription")
+                }
+            })
+        }
+    }
+
+    fun setCameraProfile(width: Int, height: Int, fps: Int) {
+        if (closed.get()) return
+        val safeWidth = width.coerceIn(320, 1920)
+        val safeHeight = height.coerceIn(240, 1080)
+        val safeFps = fps.coerceIn(10, 30)
+        network.execute {
+            try {
+                capturer?.stopCapture()
+                capturer?.startCapture(safeWidth, safeHeight, safeFps)
+                report("Androidカメラ設定：${safeWidth}x${safeHeight} / ${safeFps}fps")
+            } catch (error: Throwable) {
+                report("カメラ設定を適用できません: ${error.message ?: "不明なエラー"}")
+            }
+        }
+    }
+
     private fun startPolling() {
         network.scheduleWithFixedDelay({
             if (closed.get() || pollRunning) return@scheduleWithFixedDelay
