@@ -15,7 +15,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
@@ -35,7 +34,7 @@
         <service
             android:name=".WebRtcForegroundService"
             android:exported="false"
-            android:foregroundServiceType="camera|microphone|location"
+            android:foregroundServiceType="camera|microphone"
             android:stopWithTask="false" />
     </application>
 </manifest>
