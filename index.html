@@ -72,6 +72,15 @@
       <div class="local-preview">
         <video id="localVideo" autoplay playsinline muted></video>
         <div class="preview-actions"><span>この端末のカメラ（Android側のみ）</span><button id="cameraSwitch" class="tiny" type="button" disabled>🔄 前後カメラ切替</button></div>
+      <div class="camera-controls">
+        <h3>📷 カメラ画質設定（Android Web/PWA側）</h3>
+        <div class="camera-setting"><label for="resolutionSelect">解像度</label><select id="resolutionSelect" disabled><option value="640x360">360p</option><option value="1280x720" selected>720p</option><option value="1920x1080">1080p</option></select></div>
+        <div class="camera-setting"><label for="fpsSelect">フレームレート</label><select id="fpsSelect" disabled><option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30" selected>30 FPS</option></select></div>
+        <div class="camera-setting"><label for="zoomRange">ズーム <span id="zoomValue">対応端末のみ</span></label><input id="zoomRange" type="range" min="1" max="1" step="0.1" value="1" disabled></div>
+        <label class="camera-setting"><input id="torchToggle" type="checkbox" disabled> 🔦 ライト（対応端末のみ）</label>
+        <label class="camera-setting"><input id="adaptiveToggle" type="checkbox" checked disabled> 📶 通信状況に合わせて画質を調整</label>
+        <p class="hint">端末・ブラウザが対応しない設定は利用できません。1080pは発熱や通信量が増える場合があります。</p>
+      </div>
       </div>
     </section>
 
