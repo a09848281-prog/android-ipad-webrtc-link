@@ -41,6 +41,11 @@
         </div>
         <label for="registeredDeviceSelect">接続する登録端末</label>
         <select id="registeredDeviceSelect" class="device-select"><option value="">端末を登録してください</option></select>
+        <p id="registeredDeviceStatus" class="hint">端末の状態はまだ確認していません。</p>
+        <div class="actions">
+          <button id="refreshDeviceStatus" class="secondary" type="button" disabled>状態を更新</button>
+          <button id="connectRegisteredDevice" class="primary" type="button" disabled>Androidに接続</button>
+        </div>
         <div class="actions">
           <button id="renameDevice" class="tiny" type="button" disabled>名前変更</button>
           <button id="favoriteDevice" class="tiny" type="button" disabled>☆ お気に入り</button>
